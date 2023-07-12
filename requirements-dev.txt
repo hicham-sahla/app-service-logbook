@@ -1,0 +1,4 @@
+-r requirements.txt
+
+dominate==2.7.0
+docker==6.1.3
