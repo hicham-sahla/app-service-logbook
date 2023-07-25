@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from pydantic import BaseModel, ValidationError
 from functions.utils.client import NotesClient
@@ -78,3 +78,26 @@ def notes_endpoint(parse_func: Optional[Callable[..., BaseModel]] = None):
                 return ErrorResponse(data=str(e)).model_dump(by_alias=True)
         return wrapper
     return decorator
+
+def permission_check(
+        context: CbcContext,
+        notes_client: NotesClient,
+        note_id: Optional[str] = None
+    ) -> bool:
+    """
+    Checks whether or not a user is allowed to edit/remove notes or a specific note when given.
+    """
+    if ((context.asset or context.agent) is not None
+        and context.agent_or_asset.permissions is not None
+        and (
+            'MANAGE_AGENT' in context.agent_or_asset.permissions
+            or 'COMPANY_ADMIN' in context.agent_or_asset.permissions
+        )
+    ):
+        return True
+
+    if note_id and (note := notes_client.find_one_note(note_id)):
+        if context.user and context.user.public_id == note.user:
+            return True
+
+    return False
