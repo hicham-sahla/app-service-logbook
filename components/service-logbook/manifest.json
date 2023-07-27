@@ -1,0 +1,9 @@
+{
+  "main": "app-service-logbook.min.js",
+  "version": "1",
+  "sheetSettings": {
+    "minCols": 4,
+    "minRows": 4
+  },
+  "inputs": []
+}
