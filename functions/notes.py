@@ -4,6 +4,7 @@ from functions.utils.types import ErrorResponse, NoteAdd, NoteEdit, NoteRemove, 
 from functions.utils.utils import notes_endpoint, permission_check
 from ixoncdkingress.cbc.context import CbcContext
 
+@CbcContext.expose
 @notes_endpoint(NoteAdd)
 def add(_, notes_client: NotesClient, model: NoteAdd):
     note = notes_client.add(model.text)
@@ -13,11 +14,13 @@ def add(_, notes_client: NotesClient, model: NoteAdd):
 
     return SuccessResponse(message=f'Added Note #{note.id}', data=note)
 
+@CbcContext.expose
 @notes_endpoint()
 def get(_, notes_client: NotesClient):
 
     return SuccessResponse(data=notes_client.get())
 
+@CbcContext.expose
 @notes_endpoint(NoteEdit)
 def edit(context: CbcContext, notes_client: NotesClient, model: NoteEdit):
     if context.user is None or not permission_check(context, notes_client, model.note_id):
@@ -30,6 +33,7 @@ def edit(context: CbcContext, notes_client: NotesClient, model: NoteEdit):
 
     return SuccessResponse(message=f'Updated Note #{note.id}', data=note)
 
+@CbcContext.expose
 @notes_endpoint(NoteRemove)
 def remove(context: CbcContext, notes_client: NotesClient, model: NoteRemove):
     if context.user is None or not permission_check(context, notes_client, model.note_id):

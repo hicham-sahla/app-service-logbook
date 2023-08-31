@@ -7,6 +7,10 @@
         "build": {
           "builder": "@ixon-cdk/svelte-builder:browser",
           "input": "service-logbook.svelte"
+        },
+        "deploy": {
+          "company": "4094-4607-2800-7692-6007",
+          "template": "eTrWCo4l6Tri"
         }
       }
     }
