@@ -412,6 +412,10 @@
 
       .card-header-actions {
         padding: 8px;
+
+        @media print {
+          display: none;
+        }
       }
     }
   }
