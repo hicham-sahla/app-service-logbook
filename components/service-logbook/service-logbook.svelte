@@ -14,21 +14,33 @@
   let loaded: Writable<boolean>;
   let notes: Writable<Note[]>;
   let notesService: NotesService;
-  let translations: { [key: string]: string } = {};
+  let translations: Record<string, string> = {};
   let usersDict: Record<string, ResourceData.User> | null = null;
   let width: number | null = null;
 
   $: isNarrow = width !== null ? width <= 460 : false;
 
   onMount(async () => {
-    translations = context.translate([
-      'ADD_NOTE',
-      'NO_NOTES',
-      'NOTE',
-      'SERVICE_LOGBOOK',
-      'WHEN',
-      'WHO',
-    ]);
+    translations = context.translate(
+      [
+        'ADD',
+        'ADD_NOTE',
+        'CONFIRM',
+        'EDIT',
+        'EDIT_NOTE',
+        'NO_NOTES',
+        'NOTE',
+        'REMOVE',
+        'REMOVE_NOTE',
+        'SERVICE_LOGBOOK',
+        'UNKNOWN_USER',
+        'WHEN',
+        'WHO',
+        '__TEXT__.CONFIRM_NOTE_REMOVAL',
+      ],
+      undefined,
+      { source: 'global' },
+    );
 
     const backendComponentClient = context.createBackendComponentClient();
     notesService = new NotesService(backendComponentClient);
@@ -101,22 +113,22 @@
     note: Note,
   ): string {
     return _usersDict
-      ? _usersDict[note.user]?.name ?? context.translate('UNKNOWN_USER')
+      ? _usersDict[note.user]?.name ?? translations.UNKNOWN_USER
       : '';
   }
 
   async function handleAddButtonClick(): Promise<void> {
     const result = await context.openFormDialog({
-      title: context.translate('ADD_NOTE'),
+      title: translations.ADD_NOTE,
       inputs: [
         {
           key: 'text',
           type: 'Text',
-          label: context.translate('NOTE'),
+          label: translations.NOTE,
           required: true,
         },
       ],
-      submitButtonText: context.translate('ADD'),
+      submitButtonText: translations.ADD,
       discardChangesPrompt: true,
     });
     if (result && result.value) {
@@ -127,9 +139,9 @@
 
   async function handleRemoveNoteButtonClick(note: Note): Promise<void> {
     const confirmed = await context.openConfirmDialog({
-      title: context.translate('REMOVE_NOTE'),
-      message: context.translate('__TEXT__.CONFIRM_NOTE_REMOVAL'),
-      confirmButtonText: context.translate('REMOVE'),
+      title: translations.REMOVE_NOTE,
+      message: translations['__TEXT__.CONFIRM_NOTE_REMOVAL'],
+      confirmButtonText: translations.REMOVE,
       confirmCheckbox: true,
       destructive: true,
     });
@@ -140,8 +152,8 @@
 
   async function handleMoreActionsButtonClick(note: Note): Promise<void> {
     const actions = [
-      { title: context.translate('EDIT') },
-      { title: context.translate('REMOVE'), destructive: true },
+      { title: translations.EDIT },
+      { title: translations.REMOVE, destructive: true },
     ];
     const result = await context.openActionBottomSheet({ actions });
     if (result) {
@@ -158,17 +170,12 @@
 
   async function handleEditNoteButtonClick(note: Note): Promise<void> {
     const result = await context.openFormDialog({
-      title: context.translate('EDIT_NOTE'),
+      title: translations.EDIT_NOTE,
       inputs: [
-        {
-          key: 'text',
-          type: 'Text',
-          label: context.translate('NOTE'),
-          required: true,
-        },
+        { key: 'text', type: 'Text', label: translations.NOTE, required: true },
       ],
       initialValue: { text: note.text },
-      submitButtonText: context.translate('CONFIRM'),
+      submitButtonText: translations.CONFIRM,
       discardChangesPrompt: true,
     });
     if (result && result.value) {
@@ -310,7 +317,7 @@
                   </td>
                   <td class="col">
                     <div class="col-container">
-                      <span>{note.text}</span>
+                      <span class="text">{note.text}</span>
                       {#if getNoteIsActionable(agentOrAsset, myUser, note)}
                         <div class="col-actions">
                           <button
@@ -523,6 +530,10 @@
 
   .col .when {
     min-width: 70px;
+  }
+
+  .col .text {
+    white-space: pre-wrap;
   }
 
   .col-actions {
