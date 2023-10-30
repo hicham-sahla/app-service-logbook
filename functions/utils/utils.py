@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Optional
+from typing import Callable, Optional
 
 from pydantic import BaseModel, ValidationError
 from functions.utils.client import NotesClient
