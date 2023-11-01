@@ -1,12 +1,13 @@
-# IXON Backend Component Workspace
+# IXON Service Logbook
 
-Welcome to your workspace for developing backend component for the IXON Cloud. Note that creating backend components requires you to be able to write Python code.
+Welcome to the workspace for developing the backend and frontend component for the IXON Service Logbook.
 
-This workspace will contain all of your different web hosted functions. You can download this repository as a ZIP file, and check it into your preferred versioning system.
+## Basic information
 
-## Requirements
+Basic information on how to develop this app can be found in the workspace repositories.
 
-- Python 3.9 or higher.
+- [Backend Component Workspace](https://github.com/ixoncloud/backend-component-workspace)
+- [Component Workspace](https://github.com/ixoncloud/component-workspace)
 
 ## Getting started
 
@@ -14,24 +15,14 @@ To get started, download this project as a ZIP, and extract it to your desired l
 
 To run the project, no additional commands are required, as this is automatically sets up your virtual environment and installs dependencies.
 
+You will need 2 terminals
 ```sh
+# Run the backend
 make run
 ```
 
-This project already includes an example function, which you can find in **[this file](./functions/example.py)**. Please see [Developing Cloud Functions](https://developer.ixon.cloud/docs/tutorial-developing-a-backend-component) to find out how you can run and test your function.
-
-## Other commands
-
-Some other commands that may come in handy.
-
-This commands sets up your virtual python environment without starting the ixoncdkingress.
-
-```
-make py-venv-dev
-```
-
-This commands cleans up your virtual python environment setup for this project.
-
-```
-make py-distclean
+```sh
+# Run the frontend
+npm install
+npx cdk simulate service-logbook
 ```
