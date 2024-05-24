@@ -27,8 +27,8 @@
 
   &[disabled],
   &.disabled {
-    background-color: rgba(0, 0, 0, 0.12);
-    color: rgba(0, 0, 0, 0.26);
+    background-color: rgb(0 0 0 / 12%);
+    color: rgb(0 0 0 / 26%);
     cursor: default;
   }
 
@@ -48,7 +48,7 @@
   }
 
   &.stroked {
-    border: 1px solid rgba(0, 0, 0, 0.12);
+    border: 1px solid rgb(0 0 0 / 12%);
 
     &[disabled],
     &.disabled {
@@ -80,12 +80,10 @@
   outline: 0;
   border: none;
   background-color: transparent;
-  border: none;
   -webkit-tap-highlight-color: transparent;
   display: inline-block;
   white-space: nowrap;
   text-decoration: none;
-  vertical-align: baseline;
   text-align: center;
   margin: 0;
   overflow: visible;
@@ -109,7 +107,7 @@
     margin: 8px;
     background-repeat: no-repeat;
     line-height: 24px;
-    fill: currentColor;
+    fill: currentcolor;
     transition: transform 0.2s ease-out;
   }
 }

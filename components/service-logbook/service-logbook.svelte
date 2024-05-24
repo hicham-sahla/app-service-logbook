@@ -126,6 +126,7 @@
           type: 'Text',
           label: translations.NOTE,
           required: true,
+          translate: false,
         },
       ],
       submitButtonText: translations.ADD,
@@ -172,7 +173,13 @@
     const result = await context.openFormDialog({
       title: translations.EDIT_NOTE,
       inputs: [
-        { key: 'text', type: 'Text', label: translations.NOTE, required: true },
+        {
+          key: 'text',
+          type: 'Text',
+          label: translations.NOTE,
+          required: true,
+          translate: false,
+        },
       ],
       initialValue: { text: note.text },
       submitButtonText: translations.CONFIRM,
@@ -428,7 +435,7 @@
   }
 
   .card-header .icon-button {
-    color: var(--blue);
+    color: var(--body-color);
   }
 
   .card-header .button {
@@ -437,14 +444,14 @@
     align-items: center;
     padding-right: 12px;
     padding-left: 8px;
-    background-color: var(--blue);
+    background-color: var(--accent);
     line-height: 32px;
     font-size: 14px;
-    color: white;
+    color: var(--accent-color);
 
     svg {
       margin-right: 4px;
-      fill: white;
+      fill: var(--accent-color);
     }
   }
 
@@ -567,6 +574,10 @@
       color: rgba(0, 0, 0, 0.67);
 
       &:not(.more) {
+        display: none;
+      }
+
+      @media print {
         display: none;
       }
 
