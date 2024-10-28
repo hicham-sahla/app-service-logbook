@@ -1,10 +1,14 @@
+import time
 from functools import reduce
 from operator import add
 from typing import Any, Iterable
+
+from bson.objectid import ObjectId
 from ixoncdkingress.cbc.context import CbcContext
 from ixoncdkingress.cbc.document_db_client import DocumentDBClient
+
 from functions.utils.types import ErrorResponse, Note
-from bson.objectid import ObjectId
+
 
 class NotesClient:
     document_client: DocumentDBClient
@@ -29,6 +33,7 @@ class NotesClient:
             client = cls(
                 context.document_db_client,
                 context.user.public_id,
+                context.user.name,
                 context.agent_or_asset.public_id,
                 context.agent.public_id if context.agent else None
             )
@@ -40,10 +45,12 @@ class NotesClient:
             self,
             document_client: DocumentDBClient,
             user_id: str,
+            user_name: str,
             agent_or_asset_id: str,
             agent_id: str | None,
         ) -> None:
         self.user_id = user_id
+        self.user_name = user_name
         self.agent_or_asset_id = agent_or_asset_id
         self.document_client = document_client
 
@@ -65,8 +72,9 @@ class NotesClient:
 
     def add(self, text: str) -> Note | ErrorResponse:
         note = Note(
-            user=self.user_id,
             text=text,
+            author_id=self.user_id,
+            author_name=self.user_name,
         )
 
         result = self.document_client.update_one(
@@ -84,7 +92,14 @@ class NotesClient:
 
         return sorted(
             reduce(add, [
-                [Note(**note) for note in document.get('notes', [])]
+                [
+                    Note(**{
+                        **note,
+                        "author_id": (note.get("author_id") or note.get("user")), # Backwards compatability with old messages
+                        "user": (note.get("author_id") or note.get("user")), # Backwards compatability with new messages
+                    })
+                    for note in document.get('notes', [])
+                ]
                 for document in documents
             ]),
             key=lambda note: note.created_on,
@@ -94,7 +109,12 @@ class NotesClient:
     def edit(self, text: str, note_id: str) -> Note | ErrorResponse:
         result = self.document_client.update_many(
             {**self.in_id_filtermap, 'notes._id': ObjectId(note_id)},
-            {'$set': {'notes.$.text': text}}
+            {'$set': {
+                'notes.$.text': text,
+                'notes.$.editor_id': self.user_id,
+                'notes.$.editor_name': self.user_name,
+                'notes.$.updated_on': round(time.time() * 1000),
+            }}
         )
 
         note = self.find_one_note(note_id)

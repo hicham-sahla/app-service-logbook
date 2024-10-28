@@ -1,7 +1,8 @@
 import time
 from typing import Annotated, Generic, TypeVar
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+
 from bson.objectid import ObjectId
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
 T = TypeVar('T')
 
@@ -11,9 +12,16 @@ JSONObjectId = Annotated[
 
 class Note(BaseModel):
     id: JSONObjectId = Field(default_factory=ObjectId, alias='_id', serialization_alias='_id')
-    user: str
+    user: str | None = Field(default=None, deprecated=True)
     text: str
     created_on: int = Field(default_factory=lambda: round(time.time()*1000))
+
+    author_id: str | None = Field(default=None)
+    author_name: str | None = Field(default=None)
+
+    editor_id: str | None = Field(default=None)
+    editor_name: str | None = Field(default=None)
+    updated_on: int | None = Field(default=None)
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
