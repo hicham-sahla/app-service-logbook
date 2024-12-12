@@ -1,26 +1,51 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import type { Writable } from 'svelte/store';
+  import { onMount, tick } from 'svelte';
+  import {
+    get,
+    derived,
+    writable,
+    type Readable,
+    type Writable,
+  } from 'svelte/store';
   import type { ComponentContext, ResourceData } from '@ixon-cdk/types';
-  import type { Note } from './types';
+  import type { Note, NoteWithHtml } from './types';
   import { NotesService } from './notes.service';
   import { DateTime, type DateTimeFormatOptions } from 'luxon';
+  import {
+    getFirstLetter,
+    getStyle,
+  } from './letter-avatar/letter-avatar.utils';
+  import { renderMarkdownToHtml } from './formatters/markdown-to-html';
+  import { deburr, kebabCase } from 'lodash-es';
+  import { HtmlToReadableText } from './service-logbook.utils';
 
   export let context: ComponentContext;
 
   let rootEl: HTMLDivElement;
+  let addButton: HTMLButtonElement;
   let agentOrAsset: ResourceData.Agent | ResourceData.Asset | null = null;
+  let agentOrAssetName: string | null = null;
   let myUser: ResourceData.MyUser | null = null;
   let loaded: Writable<boolean>;
   let notes: Writable<Note[]>;
+  let notesWithHtml: Readable<NoteWithHtml[]>;
   let notesService: NotesService;
+  let searchInput: HTMLInputElement | null = null;
+  let searchInputVisible: boolean = false;
   let translations: Record<string, string> = {};
   let usersDict: Record<string, ResourceData.User> | null = null;
   let width: number | null = null;
+  let now = DateTime.now();
+
+  const filter: Writable<{ searchQuery: string | null }> = writable({
+    searchQuery: null,
+  });
+
+  let filteredNotesWithHtml: Readable<NoteWithHtml[]>;
 
   $: isNarrow = width !== null ? width <= 460 : false;
 
-  onMount(async () => {
+  onMount(() => {
     translations = context.translate(
       [
         'ADD',
@@ -28,15 +53,20 @@
         'CONFIRM',
         'EDIT',
         'EDIT_NOTE',
+        'EXPORT',
+        'EXPORT_TO_CSV',
+        'MORE_OPTIONS',
         'NO_NOTES',
         'NOTE',
         'REMOVE',
         'REMOVE_NOTE',
+        'SEARCH',
         'SERVICE_LOGBOOK',
         'UNKNOWN_USER',
         'WHEN',
         'WHO',
         '__TEXT__.CONFIRM_NOTE_REMOVAL',
+        '__TEXT__.NO_MATCHING_RESULTS',
       ],
       undefined,
       { source: 'global' },
@@ -48,14 +78,41 @@
     notes = notesService.notes;
     notesService.load();
 
+    notesWithHtml = derived(notes, ($notes: Note[]) =>
+      $notes.map(note => {
+        const html = note.text.match(/^<\/?[a-z][\s\S]*>/)
+          ? note.text
+          : renderMarkdownToHtml(note.text);
+        return { ...note, html };
+      }),
+    );
+
+    filteredNotesWithHtml = derived(
+      [filter, notesWithHtml],
+      ([$filter, $notesWithHtml]) => {
+        const searchQuery = $filter.searchQuery;
+        if (!searchQuery) {
+          return $notesWithHtml;
+        }
+        const query = searchQuery.toLowerCase();
+        return $notesWithHtml.filter(
+          note =>
+            getNoteUserName(usersDict, note).toLowerCase().includes(query) ||
+            HtmlToReadableText(note.html).toLowerCase().includes(query),
+        );
+      },
+    );
+
     const resourceDataClient = context.createResourceDataClient();
     resourceDataClient.query(
       [
-        { selector: 'Agent', fields: ['permissions', 'publicId'] },
-        { selector: 'Asset', fields: ['permissions', 'publicId'] },
+        { selector: 'Agent', fields: ['name', 'permissions', 'publicId'] },
+        { selector: 'Asset', fields: ['name', 'permissions', 'publicId'] },
       ],
       ([agentResult, assetResult]) => {
         agentOrAsset = agentResult.data ?? assetResult.data;
+        agentOrAssetName =
+          assetResult.data?.name ?? agentResult.data?.name ?? '';
       },
     );
     resourceDataClient.query(
@@ -73,6 +130,8 @@
         }
       },
     );
+
+    createTooltip(addButton, { message: translations.ADD_NOTE });
 
     width = rootEl.getBoundingClientRect().width;
     const resizeObserver = new ResizeObserver(entries => {
@@ -105,16 +164,45 @@
       return true;
     }
     // Users are able to modify or delete their own notes.
-    return note.user === _myUser?.publicId;
+    return (
+      note.author_id === _myUser?.publicId || note.user === _myUser?.publicId
+    );
   }
 
   function getNoteUserName(
     _usersDict: Record<string, ResourceData.User> | null,
     note: Note,
   ): string {
-    return _usersDict
-      ? _usersDict[note.user]?.name ?? translations.UNKNOWN_USER
-      : '';
+    if (_usersDict) {
+      /**
+       * If the note has an author_id, use the author_id to get the user name.
+       * If the note has an author_name, use the author_name.
+       * If the note has a user, use the user to get the user name.
+       * If none of the above, use the UNKNOWN_USER translation.
+       */
+      return (
+        (note.author_id ? _usersDict[note.author_id]?.name : null) ??
+        note.author_name ??
+        (note.user ? _usersDict[note.user]?.name : null) ??
+        translations.UNKNOWN_USER
+      );
+    }
+    return '';
+  }
+
+  function getNoteEditedBy(
+    _usersDict: Record<string, ResourceData.User> | null,
+    note: Note,
+  ): string {
+    if (_usersDict && note.editor_id && note.editor_name) {
+      /**
+       * If the note has an editor_id, use the editor_id to get the user name.
+       * If the note has an editor_name, use the editor_name.
+       * If none of the above, return an empty string.
+       */
+      return _usersDict[note.editor_id]?.name ?? note.editor_name ?? '';
+    }
+    return '';
   }
 
   async function handleAddButtonClick(): Promise<void> {
@@ -123,8 +211,9 @@
       inputs: [
         {
           key: 'text',
-          type: 'Text',
+          type: 'RichText',
           label: translations.NOTE,
+          placeholder: translations.NOTE,
           required: true,
           translate: false,
         },
@@ -136,6 +225,157 @@
       const { text } = result.value;
       notesService.add(text);
     }
+  }
+
+  async function handleDownloadCsvButtonClick(notes: Note[]): Promise<void> {
+    const csvHeaders = [translations.WHO, translations.WHEN, translations.NOTE];
+    const csvData = notes.map(note => [
+      `"${getNoteUserName(usersDict, note)}"`,
+      `"${mapNoteToWhenDateTime(note)}"`,
+      `"${note.text.replace(/"/g, "'")}"`,
+    ]);
+    if (notes.some(note => note.editor_id && note.editor_name)) {
+      csvHeaders.push(context.translate('EDITED_BY_USER', { user: '' }));
+      csvData.forEach((row, index) => {
+        const note = notes[index];
+        row.push(`"${getNoteEditedBy(usersDict, note) ?? '-'}"`);
+      });
+    }
+    const csvContent = `${[csvHeaders, ...csvData]
+      .map(row => row.join(','))
+      .join('\n')}`;
+    const data = new Blob([csvContent], { type: 'text/csv' });
+    const fileName = `${kebabCase(deburr(agentOrAssetName ?? undefined))}_service-logbook-notes.csv`;
+
+    if ('saveAsFile' in context) {
+      context.saveAsFile(data, fileName);
+    }
+  }
+
+  async function handlePreviewNoteClick(
+    initialNote: NoteWithHtml,
+  ): Promise<void> {
+    let root: ShadowRoot;
+    let note: NoteWithHtml | null | undefined = initialNote;
+    const previewNotes = get(filteredNotesWithHtml);
+    await context.openContentDialog({
+      htmlContent: getNoteHtmlContent(note),
+      onopened(shadowRoot, close) {
+        root = shadowRoot;
+        const moreButton = shadowRoot.querySelector('.more');
+        moreButton?.addEventListener('click', event => {
+          if (note) {
+            handleMoreActionsButtonClick(event, note, close);
+          }
+        });
+        createTooltip(moreButton as HTMLButtonElement, {
+          message: translations.MORE_OPTIONS,
+        });
+      },
+      pagination: {
+        pageCount: previewNotes.length,
+        initialPageIndex: previewNotes.indexOf(note),
+        onpagechange: index => {
+          note = previewNotes.at(index);
+          if (root && note) {
+            updateNoteHtmlContent(root, note);
+          }
+        },
+      },
+      styles: `
+          .card {
+            height: 100%;
+            border: 1px solid rgba(0,0,0,.12);
+            padding: 8px 16px;
+            box-sizing: border-box;
+            overflow: auto;
+
+            .card-header {
+              display: flex;
+              flex-wrap: wrap;
+              font-size: 0.8em;
+              line-height: 1.3em;
+              padding: 8px 16px;
+
+              .note-info {
+                display: flex;
+                flex-direction: column;
+              }
+
+              .who {
+                flex-direction: row;
+                align-items: center;
+
+                > span {
+                  display: flex;
+                  flex-direction: column;
+                }
+
+                .name {
+                  font-size: 1.1em;
+                  font-weight: 500;
+                }
+              }
+
+              .when-what {
+                margin: 3px 8px 0 auto;
+                text-align: right;
+              }
+            }
+
+            .card-content {
+              padding: 8px 16px;
+              overflow-x: auto;
+
+              div:empty {
+                display: inline-block;
+              }
+            }
+
+            .user-avatar {
+              border-radius: 100%;
+              margin-right: 8px;
+
+              text {
+                fill: #f5f5f5;
+                font-family: Roboto, Helvetica Neue, sans-serif;
+                font-size: 0.9em;
+                font-weight: 300;
+              }
+            }
+
+            .icon-button {
+              box-sizing: border-box;
+              position: relative;
+              user-select: none;
+              cursor: pointer;
+              outline: 0;
+              border: none;
+              background-color: transparent;
+              -webkit-tap-highlight-color: transparent;
+              display: inline-block;
+              white-space: nowrap;
+              text-decoration: none;
+              text-align: center;
+              margin: 0;
+              overflow: visible;
+              padding: 0;
+              width: 20px;
+              height: 20px;
+              flex-shrink: 0;
+              line-height: 20px;
+              border-radius: 50%;
+              vertical-align: middle;
+              color: var(--body-color);
+            }
+          }
+            
+          @media screen and (min-width: 960px) {
+            .card {
+              width: 860px;
+            }
+          }`,
+    });
   }
 
   async function handleRemoveNoteButtonClick(note: Note): Promise<void> {
@@ -151,19 +391,46 @@
     }
   }
 
-  async function handleMoreActionsButtonClick(note: Note): Promise<void> {
+  async function handleMoreActionsButtonClick(
+    event: Event,
+    note: Note,
+    closeDialog?: () => void,
+  ): Promise<void> {
+    event.stopImmediatePropagation();
     const actions = [
-      { title: translations.EDIT },
-      { title: translations.REMOVE, destructive: true },
-    ];
-    const result = await context.openActionBottomSheet({ actions });
+      { type: 'edit', title: translations.EDIT },
+      { type: 'export', title: translations.EXPORT },
+      { type: 'remove', title: translations.REMOVE, destructive: true },
+    ].filter(action => {
+      switch (action.type) {
+        case 'edit':
+        case 'remove':
+          return getNoteIsActionable(agentOrAsset, myUser, note);
+        default:
+          return true;
+      }
+    });
+    const target = event.target as HTMLElement;
+    const result = await context.openActionMenu(target, {
+      actions,
+    });
     if (result) {
-      switch (result.index) {
-        case 0:
+      const resultAction = actions[result.index];
+      switch (resultAction?.type) {
+        case 'edit':
           handleEditNoteButtonClick(note);
+          if (closeDialog) {
+            closeDialog();
+          }
           break;
-        case 1:
+        case 'export':
+          handleDownloadCsvButtonClick([note]);
+          break;
+        case 'remove':
           handleRemoveNoteButtonClick(note);
+          if (closeDialog) {
+            closeDialog();
+          }
           break;
       }
     }
@@ -175,8 +442,9 @@
       inputs: [
         {
           key: 'text',
-          type: 'Text',
+          type: 'RichText',
           label: translations.NOTE,
+          placeholder: translations.NOTE,
           required: true,
           translate: false,
         },
@@ -191,23 +459,52 @@
     }
   }
 
+  function handleSearchButtonClick(): void {
+    searchInputVisible = true;
+    tick().then(() => {
+      searchInput?.focus();
+    });
+  }
+
+  function handleSearchInputBlur(): void {
+    if (!$filter.searchQuery) {
+      searchInputVisible = false;
+    }
+  }
+
+  function handleSearchInputClearClick(): void {
+    $filter.searchQuery = null;
+    searchInput?.blur();
+    searchInputVisible = false;
+  }
+
   function mapNoteToWhenDateTime(note: Note): string {
     return _mapNoteToFormattedDateTime(note);
   }
 
-  function mapNoteToWhenDate(note: Note): string {
-    return _mapNoteToFormattedDateTime(note, {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
+  function mapNoteToNeeded(note: Note): string {
+    const date = DateTime.fromMillis(note.created_on, {
+      locale: context.appData.locale,
+      zone: context.appData.timeZone,
     });
-  }
-
-  function mapNoteToWhenTime(note: Note): string {
-    return _mapNoteToFormattedDateTime(note, {
-      hour: 'numeric',
-      minute: 'numeric',
-    });
+    return date.year === now.year
+      ? _mapNoteToFormattedDateTime(
+          note,
+          {
+            month: 'short',
+            day: 'numeric',
+          },
+          date,
+        )
+      : _mapNoteToFormattedDateTime(
+          note,
+          {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+          },
+          date,
+        );
   }
 
   function _mapNoteToFormattedDateTime(
@@ -219,11 +516,74 @@
       hour: 'numeric',
       minute: 'numeric',
     },
-  ): string {
-    return DateTime.fromMillis(note.created_on, {
+    date: DateTime = DateTime.fromMillis(note.created_on, {
       locale: context.appData.locale,
       zone: context.appData.timeZone,
-    }).toLocaleString(formatOpts);
+    }),
+  ): string {
+    return date.toLocaleString(formatOpts);
+  }
+
+  function createTooltip(
+    button: HTMLButtonElement,
+    options: { message: string },
+  ): void {
+    context.createTooltip(button, {
+      message: options.message,
+    });
+  }
+
+  function getNoteHtmlContent(note: NoteWithHtml): string {
+    const sanitizedHtml = context.sanitizeHtml(note.html, {
+      allowStyleAttr: true,
+    });
+    return `
+      <div class="card">
+        <div class="card-header">
+          <div class="note-info who">${_getNoteInfoWho(note)}</div>
+          <div class="note-info when-what">${_getNoteInfoWhenWhat(note)}</div>
+          <button class="icon-button more" data-testid="service-logbook-preview-more-button">
+            <svg height="20px" viewBox="0 0 24 24" width="20px">
+              <path d="M0 0h24v24H0V0z" fill="none" />
+              <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="card-content">${sanitizedHtml}</div>
+      </div>`;
+  }
+
+  function updateNoteHtmlContent(root: ShadowRoot, note: NoteWithHtml): void {
+    const noteInfoWho = root.querySelector('.note-info.who');
+    const noteInfoWhenWhat = root.querySelector('.note-info.when-what');
+    const cardContent = root.querySelector('.card-content');
+    if (noteInfoWho) {
+      noteInfoWho.innerHTML = _getNoteInfoWho(note);
+    }
+    if (noteInfoWhenWhat) {
+      noteInfoWhenWhat.innerHTML = _getNoteInfoWhenWhat(note);
+    }
+    if (cardContent) {
+      cardContent.innerHTML =
+        context.sanitizeHtml(note.html, { allowStyleAttr: true }) ?? '';
+    }
+  }
+
+  function _getNoteInfoWho(note: NoteWithHtml) {
+    const userName = getNoteUserName(usersDict, note);
+    const { width, height, backgroundColor } = getStyle(userName, 22);
+    const editedBy =
+      note.editor_id && note.editor_name
+        ? `<span class="edited-by"><i>${context.translate('EDITED_BY_USER', { user: getNoteEditedBy(usersDict, note) })}</i></span>`
+        : '';
+    return `<svg class="user-avatar" style="background-color:${backgroundColor}; width:${width}; height: ${height};"><text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${getFirstLetter(userName)}</text></svg><span><span class="name">${userName}</span>${editedBy}</span>`;
+  }
+
+  function _getNoteInfoWhenWhat(note: NoteWithHtml) {
+    const categoryLabel = false
+      ? `<span class="category-label">Maintenance</span>`
+      : '';
+    return `<span>${mapNoteToWhenDateTime(note)}</span>${categoryLabel}`;
   }
 </script>
 
@@ -233,145 +593,156 @@
       {translations.SERVICE_LOGBOOK}
     </h3>
     <div class="card-header-actions">
-      {#if isNarrow}
+      {#if searchInputVisible}
+        <div class="search-input-container">
+          <div class="search-input-prefix">
+            <svg width="24" height="24" viewBox="0 0 24 24">
+              <path d="M0 0h24v24H0z" fill="none" />
+              <path
+                d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3
+              9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6
+              0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+              />
+            </svg>
+          </div>
+          <input
+            type="text"
+            class="search-input"
+            bind:this={searchInput}
+            bind:value={$filter.searchQuery}
+            on:blur={handleSearchInputBlur}
+            placeholder={translations.SEARCH}
+            data-testid="service-logbook-search-input"
+          />
+          <div class="search-input-suffix">
+            <button
+              class="icon-button"
+              on:click={handleSearchInputClearClick}
+              data-testid="service-logbook-search-clear-button"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24">
+                <path d="M0 0h24v24H0z" fill="none" />
+                <path
+                  d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59
+                19 19 17.59 13.41 12z"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      {/if}
+
+      {#if !!$notes?.length}
         <button
+          use:createTooltip={{ message: translations.SEARCH }}
           class="icon-button"
-          data-testid="service-logbook-add-button"
-          on:click={handleAddButtonClick}
+          class:hidden={searchInputVisible}
+          data-testid="service-logbook-search-button"
+          on:click={handleSearchButtonClick}
         >
           <svg
-            xmlns="http://www.w3.org/2000/svg"
             enable-background="new 0 0 24 24"
             height="24px"
-            viewBox="0 0 24 24"
+            viewBox="0 -960 960 960"
             width="24px"
             fill="#000000"
-            ><g><rect fill="none" height="24" width="24" /></g><g
-              ><g /><g
-                ><path
-                  d="M17,19.22H5V7h7V5H5C3.9,5,3,5.9,3,7v12c0,1.1,0.9,2,2,2h12c1.1,0,2-0.9,2-2v-7h-2V19.22z"
-                /><path
-                  d="M19,2h-2v3h-3c0.01,0.01,0,2,0,2h3v2.99c0.01,0.01,2,0,2,0V7h3V5h-3V2z"
-                /><rect height="2" width="8" x="7" y="9" /><polygon
-                  points="7,12 7,14 15,14 15,12 12,12"
-                /><rect height="2" width="8" x="7" y="15" /></g
-              ></g
-            ></svg
-          >
-        </button>
-      {:else}
-        <button
-          class="button"
-          data-testid="service-logbook-add-button"
-          on:click={handleAddButtonClick}
-        >
-          <svg height="24" viewBox="0 -960 960 960" width="24"
             ><path
-              d="M450-200v-250H200v-60h250v-250h60v250h250v60H510v250h-60Z"
-            /></svg
-          >
-          <span>{translations.ADD_NOTE}</span>
+              d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"
+            />
+          </svg>
+        </button>
+        <button
+          use:createTooltip={{ message: translations.EXPORT_TO_CSV }}
+          class="icon-button"
+          class:hidden={searchInputVisible}
+          data-testid="service-logbook-export-button"
+          on:click={() => handleDownloadCsvButtonClick($notes)}
+        >
+          <svg
+            enable-background="new 0 0 24 24"
+            height="24px"
+            viewBox="0 -960 960 960"
+            width="24px"
+            fill="#000000"
+            ><path
+              d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"
+            />
+          </svg>
         </button>
       {/if}
+
+      <button
+        bind:this={addButton}
+        class="icon-button"
+        class:hidden={searchInputVisible}
+        data-testid="service-logbook-add-button"
+        on:click={handleAddButtonClick}
+      >
+        <svg
+          enable-background="new 0 0 24 24"
+          height="24px"
+          viewBox="0 -960 960 960"
+          width="24px"
+          fill="#000000"
+          ><path
+            d="M440-240h80v-120h120v-80H520v-120h-80v120H320v80h120v120ZM240-80q-33 0-56.5-23.5T160-160v-640q0-33 23.5-56.5T240-880h320l240 240v480q0 33-23.5 56.5T720-80H240Zm280-520v-200H240v640h480v-440H520ZM240-800v200-200 640-640Z"
+          />
+        </svg>
+      </button>
     </div>
   </div>
   <div class="card-content">
     {#if !!$loaded}
-      {#if !!$notes?.length}
-        <div class="table-wrapper">
-          <table class="table" class:sticky-column={!isNarrow}>
-            <thead data-testid="service-logbook-table-head">
-              <tr>
-                {#if !isNarrow}
-                  <th class="col">{translations.WHO}</th>
-                {/if}
-                <th class="col">
-                  {#if isNarrow}
-                    <span>{translations.WHO + ' / '}</span>
-                  {/if}
-                  <span>{translations.WHEN}</span>
-                </th>
-                <th class="col">{translations.NOTE}</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each $notes as note}
-                <tr class="row" data-testid="service-logbook-table-row">
-                  {#if !isNarrow}
-                    <td class="col">
-                      <span class="who">{getNoteUserName(usersDict, note)}</span
-                      >
-                    </td>
-                  {/if}
-                  <td class="col">
-                    {#if isNarrow}
-                      <div>
-                        <div class="who">
-                          {getNoteUserName(usersDict, note)}
-                        </div>
-                        <div class="when-date">
-                          {mapNoteToWhenDate(note)}
-                        </div>
-                        <div class="when-time">
-                          {mapNoteToWhenTime(note)}
-                        </div>
-                      </div>
-                    {:else}
-                      <div class="when">
-                        {mapNoteToWhenDateTime(note)}
-                      </div>
-                    {/if}
-                  </td>
-                  <td class="col">
-                    <div class="col-container">
-                      <span class="text">{note.text}</span>
-                      {#if getNoteIsActionable(agentOrAsset, myUser, note)}
-                        <div class="col-actions">
-                          <button
-                            class="icon-button"
-                            data-testid="service-logbook-edit-button"
-                            on:click={() => handleEditNoteButtonClick(note)}
-                          >
-                            <svg height="20px" viewBox="0 0 24 24" width="20px"
-                              ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                                d="M14.06 9.02l.92.92L5.92 19H5v-.92l9.06-9.06M17.66 3c-.25 0-.51.1-.7.29l-1.83 1.83 3.75 3.75 1.83-1.83c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.2-.2-.45-.29-.71-.29zm-3.6 3.19L3 17.25V21h3.75L17.81 9.94l-3.75-3.75z"
-                              /></svg
-                            >
-                          </button>
-                          <button
-                            class="icon-button"
-                            data-testid="service-logbook-remove-button"
-                            on:click={() => handleRemoveNoteButtonClick(note)}
-                          >
-                            <svg height="20px" viewBox="0 0 24 24" width="20px"
-                              ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                                d="M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z"
-                              /></svg
-                            >
-                          </button>
+      {#if !!$filteredNotesWithHtml?.length}
+        <div class="list-wrapper">
+          <div class="base-list">
+            {#each $filteredNotesWithHtml as note, index}
+              <div
+                class="list-item note-clickable"
+                data-testid="service-logbook-list-item"
+              >
+                <div
+                  class="list-item-content"
+                  class:is-narrow={isNarrow}
+                  on:click={() => handlePreviewNoteClick(note)}
+                  on:keyup={() => handlePreviewNoteClick(note)}
+                  role="button"
+                >
+                  <div
+                    class="list-item-flex-container"
+                    class:is-narrow={isNarrow}
+                  >
+                    <span class="name">{getNoteUserName(usersDict, note)}</span>
+                    <span class="text">{HtmlToReadableText(note.html)}</span>
+                  </div>
 
-                          <button
-                            class="icon-button more"
-                            on:click={() => handleMoreActionsButtonClick(note)}
-                          >
-                            <svg
-                              xmlns="http://www.w3.org/2000/svg"
-                              height="24px"
-                              viewBox="0 0 24 24"
-                              width="24px"
-                              ><path d="M0 0h24v24H0V0z" fill="none" /><path
-                                d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
-                              /></svg
-                            >
-                          </button>
-                        </div>
-                      {/if}
-                    </div>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
+                  <div
+                    class="list-item-flex-container"
+                    class:is-narrow={isNarrow}
+                  >
+                    <span class="date">{mapNoteToNeeded(note)}</span>
+                    <button
+                      class="icon-button more"
+                      use:createTooltip={{ message: translations.MORE_OPTIONS }}
+                      on:click={event =>
+                        handleMoreActionsButtonClick(event, note)}
+                      data-testid="service-logbook-list-item-more-button"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        height="24px"
+                        viewBox="0 0 24 24"
+                        width="24px"
+                        ><path d="M0 0h24v24H0V0z" fill="none" /><path
+                          d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"
+                        /></svg
+                      >
+                    </button>
+                  </div>
+                </div>
+              </div>
+            {/each}
+          </div>
         </div>
       {:else}
         <div class="empty-state" data-testid="service-logbook-empty-state">
@@ -384,7 +755,11 @@
               /><polygon points="11.546,9 20,9 20,7 9.546,7" /></g
             ><path d="M19.743,22.289l1.27-1.27L2.95,2.956l-1.27,1.28" /></svg
           >
-          <p>{translations.NO_NOTES}</p>
+          {#if $filter.searchQuery}
+            <p>{translations['__TEXT__.NO_MATCHING_RESULTS']}</p>
+          {:else}
+            <p>{translations.NO_NOTES}</p>
+          {/if}
         </div>
       {/if}
     {:else}
@@ -406,7 +781,56 @@
 <style lang="scss">
   @import './styles/button';
   @import './styles/card';
+  @import './styles/list';
   @import './styles/spinner';
+
+  .hidden {
+    visibility: hidden;
+  }
+
+  .search-input-container {
+    display: flex;
+    flex-direction: row;
+    height: 40px;
+    margin-left: 8px;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.04);
+
+    input {
+      background-color: transparent;
+      height: 32px;
+      width: 140px;
+      padding: 4px 8px 4px 0;
+      margin: 0;
+      border: none;
+      outline: none;
+      line-height: 24px;
+      font-size: 14px;
+      color: var(--body-color);
+    }
+
+    .search-input-prefix {
+      width: 24px;
+      height: 24px;
+      padding: 8px;
+    }
+
+    .search-input-suffix {
+      width: 40px;
+      height: 40px;
+
+      .icon-button {
+        background-color: transparent;
+
+        svg {
+          height: 20px;
+          width: 20px;
+          margin: 10px;
+          line-height: 20px;
+        }
+      }
+    }
+  }
 
   .card {
     .card-header {
@@ -457,148 +881,92 @@
 
   .card-content {
     position: relative;
+    z-index: 1;
   }
 
-  .table-wrapper {
-    position: absolute;
-    left: 0;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    padding: 0 8px;
-    overflow: auto;
-    overflow-anchor: none;
-  }
+  .card-content {
+    .list-wrapper {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 0;
+      padding: 0 8px;
+      overflow: auto;
+      overflow-anchor: none;
 
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
+      .note-clickable {
+        cursor: pointer;
 
-  table thead th {
-    position: sticky;
-    white-space: nowrap;
-    background: var(--basic);
-    top: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 7em;
-    z-index: 10;
-    text-align: left;
-  }
-
-  table thead tr {
-    font-weight: 600;
-  }
-
-  table thead tr .col {
-    padding: 0 6px 12px 0;
-  }
-
-  table thead tr,
-  table tbody tr {
-    height: 28px;
-
-    .col:last-child {
-      padding-right: 0;
-    }
-  }
-
-  table tbody tr:hover {
-    background-color: #f7f7f7;
-  }
-
-  table tbody tr .col {
-    padding: 6px 6px 6px 0;
-    line-height: 16px;
-    border-bottom: 1px solid var(--card-border-color);
-    vertical-align: top;
-  }
-
-  .col-container {
-    position: relative;
-    padding-right: 20px;
-
-    @media (min-width: 640px) {
-      padding-right: 0;
-    }
-  }
-
-  .col .who {
-    margin-bottom: 4px;
-    white-space: nowrap;
-  }
-
-  .col .who,
-  .col .when-date,
-  .col .when-time {
-    white-space: nowrap;
-  }
-
-  .col .when {
-    min-width: 70px;
-  }
-
-  .col .text {
-    white-space: pre-wrap;
-  }
-
-  .col-actions {
-    display: flex;
-    box-sizing: border-box;
-    flex-direction: row;
-    align-items: center;
-    place-content: space-between;
-    position: absolute;
-    padding: 0 8px;
-    top: -2px;
-    right: 0;
-    height: 100%;
-    min-height: 52px;
-
-    @media (min-width: 640px) {
-      display: none;
-      height: 20px;
-      min-height: auto;
-      align-items: flex-start;
-      background: linear-gradient(
-        90deg,
-        rgba(247, 247, 247, 0) 0%,
-        rgba(247, 247, 247, 1) 33%,
-        rgba(247, 247, 247, 1) 100%
-      );
-    }
-
-    .icon-button {
-      width: 24px;
-      color: rgba(0, 0, 0, 0.67);
-
-      &:not(.more) {
-        display: none;
+        &:hover {
+          background-color: #0000000a;
+        }
       }
 
-      @media print {
-        display: none;
-      }
+      .list-item {
+        padding: 0 8px;
+        margin: 0 -8px;
 
-      @media (min-width: 640px) {
-        height: 20px;
-        width: 20px;
-        line-height: 20px;
-        margin-left: 8px;
+        .list-item-content {
+          width: 100%;
 
-        > svg {
-          margin: 0;
-          height: 20px;
-          width: 20px;
-        }
+          &.is-narrow {
+            align-items: flex-start;
+          }
 
-        &:not(.more) {
-          display: inline-block;
-        }
+          .list-item-flex-container {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
 
-        &.more {
-          display: none;
+            &.is-narrow {
+              flex-direction: column;
+              padding-top: 8px;
+              align-items: baseline;
+
+              &:first-of-type {
+                gap: 8px;
+              }
+
+              &:last-of-type {
+                align-items: end;
+              }
+            }
+
+            &:first-of-type {
+              flex: 1;
+              min-width: 0; /* or some value */
+              margin-right: 8px;
+            }
+
+            &:last-of-type {
+              margin-left: auto;
+            }
+
+            .icon-button {
+              margin-right: -8px;
+            }
+          }
+
+          .name {
+            min-width: 160px;
+            width: 160px;
+            overflow-wrap: break-word;
+          }
+
+          .text {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+          }
+
+          .is-narrow .text {
+            display: -webkit-box;
+            white-space: normal;
+            width: 100%;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+          }
         }
       }
     }
