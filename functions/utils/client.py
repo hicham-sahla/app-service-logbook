@@ -124,15 +124,9 @@ class NotesClient:
 
         return note
 
-    def remove(self, note_id: str, user_id: str) -> ErrorResponse | None:
+    def remove(self, note_id: str) -> ErrorResponse | None:
         result = self.document_client.update_many(
-            {
-                **self.in_id_filtermap,
-                '$or': [
-                    {'notes.user': user_id}, # Backwards compatability with old messages
-                    {'notes.author_id': user_id}, # Compatability with new messages
-                ]
-            },
+            self.in_id_filtermap,
             {'$pull': {'notes': {'_id': ObjectId(note_id)}}}
         )
 

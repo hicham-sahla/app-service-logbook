@@ -39,7 +39,7 @@ def remove(context: CbcContext, notes_client: NotesClient, model: NoteRemove):
     if context.user is None or not permission_check(context, notes_client, model.note_id):
          return ErrorResponse(message='You do not have the rights to perform this action')
 
-    error = notes_client.remove(model.note_id, context.user.public_id)
+    error = notes_client.remove(model.note_id)
 
     if error is not None:
         return error
