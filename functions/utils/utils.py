@@ -97,7 +97,10 @@ def permission_check(
         return True
 
     if note_id and (note := notes_client.find_one_note(note_id)):
-        if context.user and context.user.public_id == note.user:
+        if context.user and (
+                context.user.public_id == note.user # Old messages
+                or context.user.public_id == note.author_id # New messages
+            ):
             return True
 
     return False
