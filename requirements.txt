@@ -1,2 +1,2 @@
-ixoncdkingress==0.0.20.dev0
+ixoncdkingress==0.0.20.dev4
 pydantic==2.9.2
