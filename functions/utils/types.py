@@ -23,6 +23,9 @@ class Note(BaseModel):
     editor_name: str | None = Field(default=None)
     updated_on: int | None = Field(default=None)
 
+    subject: str | None = Field(default=None)
+    category_id: str | None = Field(default=None)
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 class Response(BaseModel, Generic[T]):
@@ -41,8 +44,14 @@ class NoteEdit(BaseModel):
     note_id: str
     text: str
 
+    subject: str | None = Field(default=None)
+    category_id: str | None = Field(default=None)
+
 class NoteAdd(BaseModel):
     text: str
+
+    subject: str | None = Field(default=None)
+    category_id: str | None = Field(default=None)
 
 class NoteRemove(BaseModel):
     note_id: str

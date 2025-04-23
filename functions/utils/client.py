@@ -1,13 +1,13 @@
 import time
 from functools import reduce
 from operator import add
-from typing import Any, Iterable
+from typing import Iterable
 
 from bson.objectid import ObjectId
 from ixoncdkingress.cbc.context import CbcContext
 from ixoncdkingress.cbc.document_db_client import DocumentDBClient
 
-from functions.utils.types import ErrorResponse, Note
+from functions.utils.types import ErrorResponse, Note, NoteAdd, NoteEdit
 
 
 class NotesClient:
@@ -70,9 +70,11 @@ class NotesClient:
                 'notes': []
             })
 
-    def add(self, text: str) -> Note | ErrorResponse:
+    def add(self, add: NoteAdd) -> Note | ErrorResponse:
         note = Note(
-            text=text,
+            text=add.text,
+            subject=add.subject,
+            category_id=add.category_id,
             author_id=self.user_id,
             author_name=self.user_name,
         )
@@ -88,7 +90,7 @@ class NotesClient:
         return note
 
     def get(self) -> Iterable[Note]:
-        documents: Iterable[dict[str, Any]] = self.document_client.find(self.in_id_filtermap) or []
+        documents = self.document_client.find(self.in_id_filtermap) or []
 
         return sorted(
             reduce(add, [
@@ -106,18 +108,30 @@ class NotesClient:
             reverse=True
         )
 
-    def edit(self, text: str, note_id: str) -> Note | ErrorResponse:
+    def edit(self, edit: NoteEdit) -> Note | ErrorResponse:
         result = self.document_client.update_many(
-            {**self.in_id_filtermap, 'notes._id': ObjectId(note_id)},
-            {'$set': {
-                'notes.$.text': text,
-                'notes.$.editor_id': self.user_id,
-                'notes.$.editor_name': self.user_name,
-                'notes.$.updated_on': round(time.time() * 1000),
-            }}
+            {**self.in_id_filtermap, "notes._id": ObjectId(edit.note_id)},
+            {
+                "$set": {
+                    "notes.$.text": edit.text,
+                    "notes.$.editor_id": self.user_id,
+                    "notes.$.editor_name": self.user_name,
+                    "notes.$.updated_on": round(time.time() * 1000),
+                    **(
+                        {"notes.$.subject": edit.subject}
+                        if "subject" in edit.model_fields_set
+                        else {}
+                    ),
+                    **(
+                        {"notes.$.category_id": edit.category_id}
+                        if "category_id" in edit.model_fields_set
+                        else {}
+                    ),
+                },
+            },
         )
 
-        note = self.find_one_note(note_id)
+        note = self.find_one_note(edit.note_id)
 
         if result.modified_count == 0 or not note:
             return ErrorResponse(message='Note not modified')

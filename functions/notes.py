@@ -7,7 +7,7 @@ from ixoncdkingress.cbc.context import CbcContext
 @CbcContext.expose
 @notes_endpoint(NoteAdd)
 def add(_, notes_client: NotesClient, model: NoteAdd):
-    note = notes_client.add(model.text)
+    note = notes_client.add(model)
 
     if isinstance(note, ErrorResponse):
         return note
@@ -26,7 +26,7 @@ def edit(context: CbcContext, notes_client: NotesClient, model: NoteEdit):
     if context.user is None or not permission_check(context, notes_client, model.note_id):
          return ErrorResponse(message='You do not have the rights to perform this action')
 
-    note = notes_client.edit(model.text, model.note_id)
+    note = notes_client.edit(model)
 
     if isinstance(note, ErrorResponse):
         return note
