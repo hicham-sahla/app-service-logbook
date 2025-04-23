@@ -3,3 +3,5 @@ venv
 /dist
 node_modules
 .accesstoken
+coverage.xml
+.coverage

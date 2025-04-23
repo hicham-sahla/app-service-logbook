@@ -1,7 +1,8 @@
+from typing import ParamSpec, TypeVar
 import time
 from functools import reduce
 from operator import add
-from typing import Iterable
+from typing import Callable, Concatenate, Iterable
 
 from bson.objectid import ObjectId
 from ixoncdkingress.cbc.context import CbcContext
@@ -9,12 +10,17 @@ from ixoncdkingress.cbc.document_db_client import DocumentDBClient
 
 from functions.utils.types import ErrorResponse, Note, NoteAdd, NoteEdit
 
+P = ParamSpec("P")
+R = TypeVar("R")
+
 
 class NotesClient:
     document_client: DocumentDBClient
 
     @classmethod
-    def inject(cls, func):
+    def inject(
+        cls, func: Callable[Concatenate[CbcContext, "NotesClient", P], R]
+    ) -> Callable[Concatenate[CbcContext, P], R | ErrorResponse[None]]:
         """
         Automatically injects a kwarg `notes_client` into the given function. The given function
         needs to have an argument `context: CbcContext`.
@@ -22,7 +28,9 @@ class NotesClient:
         Automatically returns an error response when either the agent/asset or user are not set.
         """
 
-        def wrapper(context: CbcContext, *args ,**kwargs):
+        def wrapper(
+            context: CbcContext, /, *args: P.args, **kwargs: P.kwargs
+        ) -> R | ErrorResponse[None]:
             if (
                 not context.user
                 or not (context.agent or context.asset)
@@ -38,8 +46,9 @@ class NotesClient:
                 context.agent.public_id if context.agent else None
             )
 
-            return func(context, notes_client=client, *args, **kwargs)
+            return func(context, client, *args, **kwargs)
         return wrapper
+
 
     def __init__(
             self,
@@ -70,7 +79,7 @@ class NotesClient:
                 'notes': []
             })
 
-    def add(self, add: NoteAdd) -> Note | ErrorResponse:
+    def add(self, add: NoteAdd) -> Note | ErrorResponse[None]:
         note = Note(
             text=add.text,
             subject=add.subject,
@@ -90,7 +99,10 @@ class NotesClient:
         return note
 
     def get(self) -> Iterable[Note]:
-        documents = self.document_client.find(self.in_id_filtermap) or []
+        documents = self.document_client.find(self.in_id_filtermap)
+
+        if not documents:
+            return []
 
         return sorted(
             reduce(add, [
@@ -108,7 +120,7 @@ class NotesClient:
             reverse=True
         )
 
-    def edit(self, edit: NoteEdit) -> Note | ErrorResponse:
+    def edit(self, edit: NoteEdit) -> Note | ErrorResponse[None]:
         result = self.document_client.update_many(
             {**self.in_id_filtermap, "notes._id": ObjectId(edit.note_id)},
             {
@@ -138,7 +150,7 @@ class NotesClient:
 
         return note
 
-    def remove(self, note_id: str) -> ErrorResponse | None:
+    def remove(self, note_id: str) -> ErrorResponse[None] | None:
         result = self.document_client.update_many(
             self.in_id_filtermap,
             {'$pull': {'notes': {'_id': ObjectId(note_id)}}}

@@ -1,12 +1,23 @@
-from typing import Callable, Optional
+from typing import Any, Callable, Concatenate, Optional, ParamSpec, TypeVar, overload
 
 from pydantic import BaseModel, ValidationError
+from pydantic_core import ErrorDetails
 from functions.utils.client import NotesClient
 
 from functions.utils.types import ErrorResponse, Response
 from ixoncdkingress.cbc.context import CbcContext
 
-def parse_arguments(parse_func: Callable[..., BaseModel]):
+P = ParamSpec("P")
+R = TypeVar("R")
+T = TypeVar("T", bound=BaseModel)
+
+
+def parse_arguments(
+    parse_func: Callable[..., T],
+) -> Callable[
+    [Callable[[CbcContext, T], R | ErrorResponse[list[ErrorDetails]]]],
+    Callable[Concatenate[CbcContext, P], R | ErrorResponse[list[ErrorDetails]]],
+]:
     """"
     Takes the given kwargs of the function (except for the CbcContext) and parses them into a
     pydantic model and adds this to the new function by giving a kwarg `model` with the new pydantic
@@ -33,27 +44,54 @@ def parse_arguments(parse_func: Callable[..., BaseModel]):
     ```
     """
 
-    def decorator(func):
-        def wrapper(context: CbcContext,**func_args):
+    def decorator(
+        func: Callable[[CbcContext, T], R | ErrorResponse[list[ErrorDetails]]],
+    ) -> Callable[Concatenate[CbcContext, P], R | ErrorResponse[list[ErrorDetails]]]:
+        def wrapper(
+            context: CbcContext, /, *_: P.args, **func_args: P.kwargs
+        ) -> R | ErrorResponse[list[ErrorDetails]]:
             try:
-                return func(context, model=parse_func(**func_args))
+                return func(context, parse_func(**func_args))
             except ValidationError as e:
                 return ErrorResponse(data=e.errors(), message='Exception parsing input')
         return wrapper
 
     return decorator
 
-def json_response(func: Callable[..., Response]):
+def json_response(func: Callable[P, Response[T]]) -> Callable[P, dict[str, Any]]:
     """
     Ensures that a function that returns a pydantic `Response` object is turned into a JSON
     serializable object.
     """
 
-    def wrapper(*args,**kwargs):
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
         return func(*args, **kwargs).model_dump(mode='json', by_alias=True)
     return wrapper
 
-def notes_endpoint(parse_func: Optional[Callable[..., BaseModel]] = None):
+@overload
+def notes_endpoint(
+    parse_func: None = None,
+) -> Callable[
+    [Callable[Concatenate[CbcContext, NotesClient, P], Response[Any]]],
+    Callable[Concatenate[CbcContext, P], dict[str, Any]],
+]: ...
+
+
+@overload
+def notes_endpoint(
+    parse_func: Callable[..., T],
+) -> Callable[
+    [Callable[[CbcContext, NotesClient, T], Response[Any]]],
+    Callable[Concatenate[CbcContext, P], dict[str, Any]],
+]: ...
+
+
+def notes_endpoint(
+    parse_func: Callable[..., T] | None = None,
+) -> Callable[
+    [Callable[..., Response[Any]]],
+    Callable[Concatenate[CbcContext, P], dict[str, Any]],
+]:
     """
     Merges the functionality of `json_response`, `parse_arguments` and injects the notes client
     into the given function. When a parse function is given the kwargs `notes_client` and `model`
@@ -66,14 +104,21 @@ def notes_endpoint(parse_func: Optional[Callable[..., BaseModel]] = None):
     ````
     """
 
-    def decorator(func):
-        def wrapper(*args, **kwargs):
+    def decorator(
+        func: Callable[..., Response[Any]],
+    ) -> Callable[Concatenate[CbcContext, P], dict[str, Any]]:
+        def wrapper(
+            context: CbcContext, /, *args: P.args, **kwargs: P.kwargs
+        ) -> dict[str, Any]:
             try:
-                return json_response(
-                    parse_arguments(parse_func)(
-                        NotesClient.inject(func)
-                    ) if parse_func else NotesClient.inject(func)
-                )(*args, **kwargs)
+                if parse_func:
+                    return json_response(
+                        parse_arguments(parse_func)(NotesClient.inject(func))
+                    )(context, *args, **kwargs)
+                else:
+                    return json_response(
+                        (NotesClient.inject(func)),
+                    )(context, *args, **kwargs)
             except BaseException as e:
                 return ErrorResponse(data=str(e)).model_dump(by_alias=True)
         return wrapper

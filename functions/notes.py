@@ -1,12 +1,24 @@
+from typing import Iterable
 from functions.utils.client import NotesClient
 
-from functions.utils.types import ErrorResponse, NoteAdd, NoteEdit, NoteRemove, SuccessResponse
+from functions.utils.types import (
+    ErrorResponse,
+    NoteAdd,
+    NoteEdit,
+    NoteRemove,
+    SuccessResponse,
+    Note,
+)
 from functions.utils.utils import notes_endpoint, permission_check
 from ixoncdkingress.cbc.context import CbcContext
 
 @CbcContext.expose
 @notes_endpoint(NoteAdd)
-def add(_, notes_client: NotesClient, model: NoteAdd):
+def add(
+    _: CbcContext,
+    notes_client: NotesClient,
+    model: NoteAdd,
+) -> ErrorResponse[None] | SuccessResponse[Note]:
     note = notes_client.add(model)
 
     if isinstance(note, ErrorResponse):
@@ -16,13 +28,20 @@ def add(_, notes_client: NotesClient, model: NoteAdd):
 
 @CbcContext.expose
 @notes_endpoint()
-def get(_, notes_client: NotesClient):
+def get(
+    _: CbcContext,
+    notes_client: NotesClient,
+) -> SuccessResponse[Iterable[Note]]:
 
     return SuccessResponse(data=notes_client.get())
 
 @CbcContext.expose
 @notes_endpoint(NoteEdit)
-def edit(context: CbcContext, notes_client: NotesClient, model: NoteEdit):
+def edit(
+    context: CbcContext,
+    notes_client: NotesClient,
+    model: NoteEdit,
+) -> ErrorResponse[None] | SuccessResponse[Note]:
     if context.user is None or not permission_check(context, notes_client, model.note_id):
          return ErrorResponse(message='You do not have the rights to perform this action')
 
@@ -35,7 +54,11 @@ def edit(context: CbcContext, notes_client: NotesClient, model: NoteEdit):
 
 @CbcContext.expose
 @notes_endpoint(NoteRemove)
-def remove(context: CbcContext, notes_client: NotesClient, model: NoteRemove):
+def remove(
+    context: CbcContext,
+    notes_client: NotesClient,
+    model: NoteRemove,
+) -> ErrorResponse[None] | SuccessResponse[None]:
     if context.user is None or not permission_check(context, notes_client, model.note_id):
          return ErrorResponse(message='You do not have the rights to perform this action')
 
