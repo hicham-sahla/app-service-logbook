@@ -12,6 +12,7 @@ from functions.utils.types import (
 from functions.utils.utils import notes_endpoint, permission_check
 from ixoncdkingress.cbc.context import CbcContext
 
+
 @CbcContext.expose
 @notes_endpoint(NoteAdd)
 def add(
@@ -24,7 +25,8 @@ def add(
     if isinstance(note, ErrorResponse):
         return note
 
-    return SuccessResponse(message=f'Added Note #{note.id}', data=note)
+    return SuccessResponse(message=f"Added Note #{note.id}", data=note)
+
 
 @CbcContext.expose
 @notes_endpoint()
@@ -32,8 +34,8 @@ def get(
     _: CbcContext,
     notes_client: NotesClient,
 ) -> SuccessResponse[Iterable[Note]]:
-
     return SuccessResponse(data=notes_client.get())
+
 
 @CbcContext.expose
 @notes_endpoint(NoteEdit)
@@ -42,15 +44,20 @@ def edit(
     notes_client: NotesClient,
     model: NoteEdit,
 ) -> ErrorResponse[None] | SuccessResponse[Note]:
-    if context.user is None or not permission_check(context, notes_client, model.note_id):
-         return ErrorResponse(message='You do not have the rights to perform this action')
+    if context.user is None or not permission_check(
+        context, notes_client, model.note_id
+    ):
+        return ErrorResponse(
+            message="You do not have the rights to perform this action"
+        )
 
     note = notes_client.edit(model)
 
     if isinstance(note, ErrorResponse):
         return note
 
-    return SuccessResponse(message=f'Updated Note #{note.id}', data=note)
+    return SuccessResponse(message=f"Updated Note #{note.id}", data=note)
+
 
 @CbcContext.expose
 @notes_endpoint(NoteRemove)
@@ -59,12 +66,16 @@ def remove(
     notes_client: NotesClient,
     model: NoteRemove,
 ) -> ErrorResponse[None] | SuccessResponse[None]:
-    if context.user is None or not permission_check(context, notes_client, model.note_id):
-         return ErrorResponse(message='You do not have the rights to perform this action')
+    if context.user is None or not permission_check(
+        context, notes_client, model.note_id
+    ):
+        return ErrorResponse(
+            message="You do not have the rights to perform this action"
+        )
 
     error = notes_client.remove(model.note_id)
 
     if error is not None:
         return error
 
-    return SuccessResponse(message='Removed Note')
+    return SuccessResponse(message="Removed Note")

@@ -18,7 +18,7 @@ def parse_arguments(
     [Callable[[CbcContext, T], R | ErrorResponse[list[ErrorDetails]]]],
     Callable[Concatenate[CbcContext, P], R | ErrorResponse[list[ErrorDetails]]],
 ]:
-    """"
+    """ "
     Takes the given kwargs of the function (except for the CbcContext) and parses them into a
     pydantic model and adds this to the new function by giving a kwarg `model` with the new pydantic
     model. Can also be used with a normal function rather than a pydantic model.
@@ -53,10 +53,12 @@ def parse_arguments(
             try:
                 return func(context, parse_func(**func_args))
             except ValidationError as e:
-                return ErrorResponse(data=e.errors(), message='Exception parsing input')
+                return ErrorResponse(data=e.errors(), message="Exception parsing input")
+
         return wrapper
 
     return decorator
+
 
 def json_response(func: Callable[P, Response[T]]) -> Callable[P, dict[str, Any]]:
     """
@@ -65,8 +67,10 @@ def json_response(func: Callable[P, Response[T]]) -> Callable[P, dict[str, Any]]
     """
 
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> dict[str, Any]:
-        return func(*args, **kwargs).model_dump(mode='json', by_alias=True)
+        return func(*args, **kwargs).model_dump(mode="json", by_alias=True)
+
     return wrapper
+
 
 @overload
 def notes_endpoint(
@@ -121,31 +125,33 @@ def notes_endpoint(
                     )(context, *args, **kwargs)
             except BaseException as e:
                 return ErrorResponse(data=str(e)).model_dump(by_alias=True)
+
         return wrapper
+
     return decorator
 
+
 def permission_check(
-        context: CbcContext,
-        notes_client: NotesClient,
-        note_id: Optional[str] = None
-    ) -> bool:
+    context: CbcContext, notes_client: NotesClient, note_id: Optional[str] = None
+) -> bool:
     """
     Checks whether or not a user is allowed to edit/remove notes or a specific note when given.
     """
-    if ((context.asset or context.agent) is not None
+    if (
+        (context.asset or context.agent) is not None
         and context.agent_or_asset.permissions is not None
         and (
-            'MANAGE_AGENT' in context.agent_or_asset.permissions
-            or 'COMPANY_ADMIN' in context.agent_or_asset.permissions
+            "MANAGE_AGENT" in context.agent_or_asset.permissions
+            or "COMPANY_ADMIN" in context.agent_or_asset.permissions
         )
     ):
         return True
 
     if note_id and (note := notes_client.find_one_note(note_id)):
         if context.user and (
-                context.user.public_id == note.user # Old messages
-                or context.user.public_id == note.author_id # New messages
-            ):
+            context.user.public_id == note.user  # Old messages
+            or context.user.public_id == note.author_id  # New messages
+        ):
             return True
 
     return False
