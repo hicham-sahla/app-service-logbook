@@ -28,7 +28,7 @@ def test_add_ok(function_context: FunctionContext):
     assert None is data["editor_name"]
     assert None is data["updated_on"]
     assert None is data["subject"]
-    assert None is data["category_id"]
+    assert None is data["category"]
 
 
 def test_add_with_category_and_subject(function_context: FunctionContext):
@@ -37,7 +37,7 @@ def test_add_with_category_and_subject(function_context: FunctionContext):
         **{
             "text": "Test Note",
             "subject": "Test Subject",
-            "category_id": "category0000",
+            "category": 0,
         },
     )
 
@@ -46,7 +46,7 @@ def test_add_with_category_and_subject(function_context: FunctionContext):
     data = result["data"]
 
     assert "Test Subject" == data["subject"]
-    assert "category0000" == data["category_id"]
+    assert 0 == data["category"]
 
 
 def test_get_ok(function_context: FunctionContext):
@@ -55,7 +55,7 @@ def test_get_ok(function_context: FunctionContext):
         **{
             "text": "Test Note",
             "subject": "Test Subject",
-            "category_id": "category0000",
+            "category": 0,
         },
     )
 
@@ -64,7 +64,7 @@ def test_get_ok(function_context: FunctionContext):
         **{
             "text": "Test Note 2",
             "subject": "Test Subject 2",
-            "category_id": "category0001",
+            "category": 1,
         },
     )
 
@@ -76,11 +76,11 @@ def test_get_ok(function_context: FunctionContext):
 
     assert "Test Note" == note_0["text"]
     assert "Test Subject" == note_0["subject"]
-    assert "category0000" == note_0["category_id"]
+    assert 0 == note_0["category"]
 
     assert "Test Note 2" == note_1["text"]
     assert "Test Subject 2" == note_1["subject"]
-    assert "category0001" == note_1["category_id"]
+    assert 1 == note_1["category"]
 
 
 def test_edit_ok(function_context: FunctionContext):
@@ -91,7 +91,7 @@ def test_edit_ok(function_context: FunctionContext):
         **{
             "text": "Test Note",
             "subject": "Test Subject",
-            "category_id": "category0000",
+            "category": 0,
         },
     )
 
@@ -100,7 +100,7 @@ def test_edit_ok(function_context: FunctionContext):
         **{
             "text": "Test Note 2",
             "subject": "Test Subject 2",
-            "category_id": "category0001",
+            "category": 1,
         },
     )
 
@@ -112,7 +112,7 @@ def test_edit_ok(function_context: FunctionContext):
             "note_id": result["data"]["_id"],
             "text": "Edited Note",
             "subject": "Edited Subject",
-            "category_id": "category0002",
+            "category": 2,
         },
     )
 
@@ -123,7 +123,7 @@ def test_edit_ok(function_context: FunctionContext):
 
     assert "Edited Note" == note_0["text"]
     assert "Edited Subject" == note_0["subject"]
-    assert "category0002" == note_0["category_id"]
+    assert 2 == note_0["category"]
     assert 174540182000 == note_0["created_on"]
     assert 174540181000 == note_0["updated_on"]
     assert "user00000000" == note_0["author_id"]
@@ -135,7 +135,7 @@ def test_edit_ok(function_context: FunctionContext):
     # Check that the other note wasn't changed
     assert "Test Note 2" == note_1["text"]
     assert "Test Subject 2" == note_1["subject"]
-    assert "category0001" == note_1["category_id"]
+    assert 1 == note_1["category"]
     assert None is note_1["updated_on"]
 
 
@@ -151,7 +151,7 @@ def test_edit_other_user(
         **{
             "text": "Test Note",
             "subject": "Test Subject",
-            "category_id": "category0000",
+            "category": 0,
         },
     )
 
@@ -166,7 +166,7 @@ def test_edit_other_user(
             "note_id": result["data"]["_id"],
             "text": "Edited Note",
             "subject": "Edited Subject",
-            "category_id": "category0002",
+            "category": 2,
         },
     )
 
@@ -177,7 +177,7 @@ def test_edit_other_user(
 
     assert "Edited Note" == note_0["text"]
     assert "Edited Subject" == note_0["subject"]
-    assert "category0002" == note_0["category_id"]
+    assert 2 == note_0["category"]
     assert 174540182000 == note_0["created_on"]
     assert 174540181000 == note_0["updated_on"]
     assert "user00000000" == note_0["author_id"]
@@ -199,7 +199,7 @@ def test_edit_other_user_no_permission(
         **{
             "text": "Test Note",
             "subject": "Test Subject",
-            "category_id": "category0000",
+            "category": 0,
         },
     )
 
@@ -214,7 +214,7 @@ def test_edit_other_user_no_permission(
             "note_id": result["data"]["_id"],
             "text": "Edited Note",
             "subject": "Edited Subject",
-            "category_id": "category0002",
+            "category": 2,
         },
     )
 
@@ -225,7 +225,7 @@ def test_edit_other_user_no_permission(
 
     assert "Test Note" == note_0["text"]
     assert "Test Subject" == note_0["subject"]
-    assert "category0000" == note_0["category_id"]
+    assert 0 == note_0["category"]
     assert 174540182000 == note_0["created_on"]
     assert None is note_0["updated_on"]
     assert "user00000000" == note_0["author_id"]
@@ -241,7 +241,7 @@ def test_remove_ok(function_context: FunctionContext):
         **{
             "text": "Test Note",
             "subject": "Test Subject",
-            "category_id": "category0000",
+            "category": 0,
         },
     )
 
@@ -263,7 +263,7 @@ def test_remove_no_permission(
         **{
             "text": "Test Note",
             "subject": "Test Subject",
-            "category_id": "category0000",
+            "category": 0,
         },
     )
 

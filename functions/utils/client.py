@@ -84,7 +84,7 @@ class NotesClient:
         note = Note(
             text=add.text,
             subject=add.subject,
-            category_id=add.category_id,
+            category=add.category,
             author_id=self.user_id,
             author_name=self.user_name,
         )
@@ -145,8 +145,8 @@ class NotesClient:
                         else {}
                     ),
                     **(
-                        {"notes.$.category_id": edit.category_id}
-                        if "category_id" in edit.model_fields_set
+                        {"notes.$.category": edit.category}
+                        if "category" in edit.model_fields_set
                         else {}
                     ),
                 },
