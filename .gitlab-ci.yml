@@ -1,0 +1,110 @@
+stages:
+  - static-analysis
+  - test
+  - build
+  - deploy
+  - notify
+
+variables:
+  UNIT_TEST_MONGO_HOST: mongodb
+  UNIT_TEST_MONGO_PORT: '27017'
+  UNIT_TEST_MONGO_NAME: admin
+  UNIT_TEST_MONGO_USER: root
+  UNIT_TEST_MONGO_PASS: mongo-root
+
+  MONGO_INITDB_ROOT_USERNAME: root
+  MONGO_INITDB_ROOT_PASSWORD: mongo-root
+
+.dependencies-alpine: &dependencies_alpine
+  before_script:
+    - apk add make
+
+    # Create venv
+    - make py-venv-dev
+
+.dependencies-alpine-py3_10: &dependencies_alpine_py3_10
+  <<: *dependencies_alpine
+  image: gitlab.ixon.net:4221/ixon/docker/py3.10-alpine3.17-py-test:latest
+
+.test-dependencies: &test_dependencies
+  stage: test
+
+  services:
+    - name: ${CI_DEPENDENCY_PROXY_GROUP_IMAGE_PREFIX}/mongo:3.6.23-xenial
+      alias: mongodb
+
+  # Coverage regex for total coverage in pytest-cov
+  coverage: '/TOTAL.* (\d+.\d+\%\s*)$/'
+
+  artifacts:
+    # Always expose artifacts
+    when: always
+    name: "$CI_JOB_STAGE-$CI_COMMIT_REF_NAME"
+    paths:
+    # Expose html coverage report as artifact
+    - $CI_PROJECT_DIR/htmlcov
+    - $CI_PROJECT_DIR/junit.xml
+    - $CI_PROJECT_DIR/coverage.xml
+
+    reports:
+      junit:
+      - $CI_PROJECT_DIR/junit.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: $CI_PROJECT_DIR/coverage.xml
+
+    # Artifacts will be deleted in 1 week after job finished
+    expire_in: 1 week
+
+.static-analysis: &static_analysis_job
+  <<: *dependencies_alpine_py3_10
+  needs: []
+  stage: static-analysis
+  script:
+    - make ${TARGET}
+
+ruff:
+  <<: *static_analysis_job
+  variables:
+    TARGET: py-ruff
+
+test-ruff:
+  <<: *static_analysis_job
+  variables:
+    TARGET: py-unittest-ruff
+
+typecheck:
+  <<: *static_analysis_job
+  variables:
+    TARGET: py-typecheck
+
+test-typecheck:
+  <<: *static_analysis_job
+  variables:
+    TARGET: py-unittest-typecheck
+
+bandit:
+  <<: *static_analysis_job
+  variables:
+    TARGET: py-bandit
+
+format:
+  <<: *static_analysis_job
+  variables:
+    TARGET: py-format
+    FORMAT_CHECK_ONLY: "true"
+
+test-format:
+  <<: *static_analysis_job
+  variables:
+    TARGET: py-unittest-format
+    FORMAT_CHECK_ONLY: "true"
+
+test:
+  <<: *dependencies_alpine_py3_10
+  <<: *test_dependencies
+
+  script:
+    - make py-unittest \
+      TEST_FLAGS='--color=yes --cov-report xml --junitxml=junit.xml' \
+      TEST_FILES=tests/test_integration

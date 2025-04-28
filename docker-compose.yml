@@ -1,0 +1,8 @@
+services:
+  mongo:
+    image: mongo:6.0.18-jammy
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: mongo-root
+    ports:
+      - "23221:27017"
