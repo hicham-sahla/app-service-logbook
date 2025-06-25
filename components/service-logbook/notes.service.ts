@@ -8,16 +8,16 @@ export class NotesService {
 
   constructor(private client: BackendComponentClient) {}
 
-  add(text: string) {
-    return this.client.call('notes.add', { text }).then(result => {
+  add(text: string, subject?: string, category?: number) {
+    return this.client.call('notes.add', { text, subject, category }).then(result => {
       if (result.data.success) {
         this.notes.update(note => [result.data.data, ...note]);
       }
     });
   }
 
-  edit(id: string, text: string) {
-    return this.client.call('notes.edit', { note_id: id, text }).then(result => {
+  edit(id: string, text: string, subject?: string, category?: number | null) {
+    return this.client.call('notes.edit', { note_id: id, text, subject, category }).then(result => {
       if (result.data.success) {
         this.notes.update(notes => notes.map(note => (note._id === id ? { ...note, ...result.data.data } : note)));
       }

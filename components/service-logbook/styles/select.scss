@@ -1,0 +1,56 @@
+.filter-select {
+  position: relative;
+  display: inline-flex;
+
+  .select-button {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 0.25rem 4px 0.5rem;
+    border: 1px solid color-mix(in srgb, transparent, currentcolor 12%);
+    border-radius: 8px 0 0 8px;
+    background-color: transparent;
+    width: calc(150px - 30px);
+    min-height: 30px;
+
+    span {
+      text-align: start;
+      overflow: hidden;
+      white-space: nowrap;
+      display: inline-block;
+      width: 100%;
+      text-overflow: ellipsis;
+    }
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  &:not(:has(.icon-button)) {
+    &::after {
+      right: 0;
+    }
+
+    .select-button {
+      border-radius: 8px;
+      width: 150px;
+    }
+  }
+
+  .icon-button {
+    border: 1px solid color-mix(in srgb, transparent, currentcolor 12%);
+    border-left: none;
+    border-radius: 0 8px 8px 0;
+    height: 30px;
+    width: 30px;
+
+    svg {
+      height: 18px;
+      width: 18px;
+      line-height: 18px;
+      margin: 5px;
+    }
+  }
+}
