@@ -1,3 +1,10 @@
+export interface ServiceLogbookCategory {
+  id: number;
+  name: string;
+  translate?: boolean;
+  color?: string;
+}
+
 export interface Note {
   _id: string;
   /**
@@ -6,9 +13,11 @@ export interface Note {
    * @deprecated
    */
   user?: string;
+  subject: string | null;
   text: string;
   /** unix epoch in milliseconds */
   created_on: number;
+  category: number | null;
 
   /** User.publicId */
   author_id: string | null;

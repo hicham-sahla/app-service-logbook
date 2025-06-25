@@ -7,17 +7,26 @@
     type Readable,
     type Writable,
   } from 'svelte/store';
-  import type { ComponentContext, ResourceData } from '@ixon-cdk/types';
-  import type { Note, NoteWithHtml } from './types';
+  import type {
+    ComponentContext,
+    ComponentInput,
+    ResourceData,
+    SingleSelectPanelOptions,
+  } from '@ixon-cdk/types';
+  import type { Note, NoteWithHtml, ServiceLogbookCategory } from './types';
   import { NotesService } from './notes.service';
+  import { deburr, kebabCase } from 'lodash-es';
   import { DateTime, type DateTimeFormatOptions } from 'luxon';
   import {
     getFirstLetter,
     getStyle,
   } from './letter-avatar/letter-avatar.utils';
-  import { renderMarkdownToHtml } from './formatters/markdown-to-html';
-  import { deburr, kebabCase } from 'lodash-es';
+  import { renderMarkdownToHtml } from './formatters/markdown-to-html/markdown-to-html.utils';
   import { HtmlToReadableText } from './service-logbook.utils';
+  import {
+    getCategoryStyle,
+    mapAppConfigToServiceLogbookCategoryMapFactory,
+  } from './categories.utils';
 
   export let context: ComponentContext;
 
@@ -25,8 +34,14 @@
   let addButton: HTMLButtonElement;
   let agentOrAsset: ResourceData.Agent | ResourceData.Asset | null = null;
   let agentOrAssetName: string | null = null;
+  let categories: Map<number, ServiceLogbookCategory> = new Map();
   let myUser: ResourceData.MyUser | null = null;
   let loaded: Writable<boolean>;
+  let mapAppConfigToServiceLogbookCategoryMap: (
+    appConfig: ResourceData.AppConfig<{
+      categories?: ServiceLogbookCategory[];
+    }> | null,
+  ) => Map<number, ServiceLogbookCategory>;
   let notes: Writable<Note[]>;
   let notesWithHtml: Readable<NoteWithHtml[]>;
   let notesService: NotesService;
@@ -37,19 +52,35 @@
   let width: number | null = null;
   let now = DateTime.now();
 
-  const filter: Writable<{ searchQuery: string | null }> = writable({
+  const filter: Writable<{
+    searchQuery: string | null;
+    selectedCategoryId: number | null;
+  }> = writable({
     searchQuery: null,
+    selectedCategoryId: null,
   });
 
   let filteredNotesWithHtml: Readable<NoteWithHtml[]>;
 
   $: isNarrow = width !== null ? width <= 460 : false;
+  $: isSmall = width !== null ? width <= 400 : false;
+  $: notesWithCategories = derived([notesWithHtml], ([$notes]) => {
+    return (
+      categories.size > 0 &&
+      ($notes?.some(note => note.category !== undefined) ?? false)
+    );
+  });
+  $: selectedCategoryName = derived([filter], ([$filter]) => {
+    const category = getCategory($filter.selectedCategoryId);
+    return category ? category.name : translations.CATEGORY;
+  });
 
   onMount(() => {
     translations = context.translate(
       [
         'ADD',
         'ADD_NOTE',
+        'CATEGORY',
         'CONFIRM',
         'EDIT',
         'EDIT_NOTE',
@@ -57,11 +88,13 @@
         'EXPORT_TO_CSV',
         'MORE_OPTIONS',
         'NO_NOTES',
+        'NONE',
         'NOTE',
         'REMOVE',
         'REMOVE_NOTE',
         'SEARCH',
         'SERVICE_LOGBOOK',
+        'SUBJECT',
         'UNKNOWN_USER',
         'WHEN',
         'WHO',
@@ -73,6 +106,8 @@
     );
 
     const backendComponentClient = context.createBackendComponentClient();
+    mapAppConfigToServiceLogbookCategoryMap =
+      mapAppConfigToServiceLogbookCategoryMapFactory(context);
     notesService = new NotesService(backendComponentClient);
     loaded = notesService.loaded;
     notes = notesService.notes;
@@ -90,20 +125,35 @@
     filteredNotesWithHtml = derived(
       [filter, notesWithHtml],
       ([$filter, $notesWithHtml]) => {
-        const searchQuery = $filter.searchQuery;
+        const { searchQuery, selectedCategoryId } = $filter;
+        let notes =
+          selectedCategoryId !== null
+            ? $notesWithHtml.filter(
+                note => note.category === selectedCategoryId,
+              )
+            : $notesWithHtml;
         if (!searchQuery) {
-          return $notesWithHtml;
+          return notes;
         }
+
         const query = searchQuery.toLowerCase();
-        return $notesWithHtml.filter(
+        return notes.filter(
           note =>
             getNoteUserName(usersDict, note).toLowerCase().includes(query) ||
+            note.subject?.toLowerCase().includes(query) ||
             HtmlToReadableText(note.html).toLowerCase().includes(query),
         );
       },
     );
 
     const resourceDataClient = context.createResourceDataClient();
+    resourceDataClient.query(
+      [{ selector: 'AppConfig', fields: ['values'] }],
+      ([result]) => {
+        const appConfig = result.data;
+        categories = mapAppConfigToServiceLogbookCategoryMap(appConfig);
+      },
+    );
     resourceDataClient.query(
       [
         { selector: 'Agent', fields: ['name', 'permissions', 'publicId'] },
@@ -208,39 +258,39 @@
   async function handleAddButtonClick(): Promise<void> {
     const result = await context.openFormDialog({
       title: translations.ADD_NOTE,
-      inputs: [
-        {
-          key: 'text',
-          type: 'RichText',
-          label: translations.NOTE,
-          placeholder: translations.NOTE,
-          required: true,
-          translate: false,
-        },
-      ],
+      inputs: _getNoteInputs(),
       submitButtonText: translations.ADD,
       discardChangesPrompt: true,
     });
     if (result && result.value) {
-      const { text } = result.value;
-      notesService.add(text);
+      const { subject, text, category } = result.value;
+      notesService.add(text, subject, category);
     }
   }
 
-  async function handleDownloadCsvButtonClick(notes: Note[]): Promise<void> {
-    const csvHeaders = [translations.WHO, translations.WHEN, translations.NOTE];
+  function handleDownloadCsvButtonClick(notes: Note[]): void {
+    const hasEditedBy = notes.some(note => note.editor_id && note.editor_name);
+    const hasSubject = notes.some(note => note.subject);
+    const csvHeaders = [
+      translations.WHO,
+      translations.WHEN,
+      ...(hasSubject ? [translations.SUBJECT] : []),
+      ...(notesWithCategories ? [translations.CATEGORY] : []),
+      translations.NOTE,
+      ...(hasEditedBy
+        ? [context.translate('EDITED_BY_USER', { user: '' })]
+        : []),
+    ];
     const csvData = notes.map(note => [
       `"${getNoteUserName(usersDict, note)}"`,
       `"${mapNoteToWhenDateTime(note)}"`,
+      ...(hasSubject ? [`"${note.subject?.replace(/"/g, "'") ?? '-'}"`] : []),
+      ...(notesWithCategories
+        ? [`"${getCategory(note.category)?.name ?? '-'}"`]
+        : []),
       `"${note.text.replace(/"/g, "'")}"`,
+      ...(hasEditedBy ? [`"${getNoteEditedBy(usersDict, note) ?? '-'}"`] : []),
     ]);
-    if (notes.some(note => note.editor_id && note.editor_name)) {
-      csvHeaders.push(context.translate('EDITED_BY_USER', { user: '' }));
-      csvData.forEach((row, index) => {
-        const note = notes[index];
-        row.push(`"${getNoteEditedBy(usersDict, note) ?? '-'}"`);
-      });
-    }
     const csvContent = `${[csvHeaders, ...csvData]
       .map(row => row.join(','))
       .join('\n')}`;
@@ -262,6 +312,11 @@
       htmlContent: getNoteHtmlContent(note),
       onopened(shadowRoot, close) {
         root = shadowRoot;
+        const categoryElement = shadowRoot.querySelector('.category');
+        if (categoryElement) {
+          createTooltipOnEllipsis(categoryElement as HTMLElement);
+        }
+
         const moreButton = shadowRoot.querySelector('.more');
         moreButton?.addEventListener('click', event => {
           if (note) {
@@ -285,7 +340,8 @@
       styles: `
           .card {
             height: 100%;
-            border: 1px solid rgba(0,0,0,.12);
+            border: 1px solid color-mix(in srgb, transparent, currentcolor 12%);
+            border-radius: 8px;
             padding: 8px 16px;
             box-sizing: border-box;
             overflow: auto;
@@ -318,8 +374,18 @@
               }
 
               .when-what {
+                align-items: end;
                 margin: 3px 8px 0 auto;
                 text-align: right;
+              }
+
+              .category {
+                padding: 4px 8px;
+                border-radius: 4px;
+                max-width: 100px;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
               }
             }
 
@@ -366,10 +432,14 @@
               line-height: 20px;
               border-radius: 50%;
               vertical-align: middle;
-              color: var(--body-color);
+              color: currentcolor;
+
+              svg {
+                fill: currentcolor;
+              }
             }
           }
-            
+
           @media screen and (min-width: 960px) {
             .card {
               width: 860px;
@@ -437,25 +507,27 @@
   }
 
   async function handleEditNoteButtonClick(note: Note): Promise<void> {
+    const hasCategories = categories.size > 0;
+
     const result = await context.openFormDialog({
       title: translations.EDIT_NOTE,
-      inputs: [
-        {
-          key: 'text',
-          type: 'RichText',
-          label: translations.NOTE,
-          placeholder: translations.NOTE,
-          required: true,
-          translate: false,
-        },
-      ],
-      initialValue: { text: note.text },
+      inputs: _getNoteInputs(),
+      initialValue: {
+        subject: note.subject,
+        ...(hasCategories ? { category: note?.category ?? null } : {}),
+        text: note.text,
+      },
       submitButtonText: translations.CONFIRM,
       discardChangesPrompt: true,
     });
     if (result && result.value) {
-      const { text } = result.value;
-      await notesService.edit(note._id, text);
+      const { subject, text, category } = result.value;
+      await notesService.edit(
+        note._id,
+        text,
+        subject,
+        hasCategories ? (category ?? null) : undefined,
+      );
     }
   }
 
@@ -533,7 +605,23 @@
     });
   }
 
+  function createTooltipOnEllipsis(element: HTMLElement): void {
+    const elementWidth = element.offsetWidth;
+    const elementContentWidth = element.scrollWidth;
+
+    if (elementContentWidth > elementWidth) {
+      context.createTooltip(element, {
+        message: element.innerText,
+      });
+    }
+  }
+
+  function getCategory(id: number | null): ServiceLogbookCategory | null {
+    return id !== null ? (categories.get(id) ?? null) : null;
+  }
+
   function getNoteHtmlContent(note: NoteWithHtml): string {
+    const subject = note.subject ? `<h2>${note.subject}</h2>` : '';
     const sanitizedHtml = context.sanitizeHtml(note.html, {
       allowStyleAttr: true,
     });
@@ -549,8 +637,39 @@
             </svg>
           </button>
         </div>
-        <div class="card-content">${sanitizedHtml}</div>
+        <div class="card-content">
+          ${subject}
+          ${sanitizedHtml}
+        </div>
       </div>`;
+  }
+
+  async function handleOpenCategorySelect(event: MouseEvent): Promise<void> {
+    const target = event.target as HTMLElement;
+    const selectTarget =
+      (target.closest('.select-button') as HTMLElement) ?? target;
+
+    const selectOptions = Array.from(categories.entries()).map(
+      ([key, category]) => ({
+        text: category.name,
+        key,
+      }),
+    );
+    const selected = $filter.selectedCategoryId
+      ? selectOptions.findIndex(
+          option => option.key === $filter.selectedCategoryId,
+        )
+      : undefined;
+
+    const options: SingleSelectPanelOptions = {
+      options: selectOptions,
+      selected,
+    };
+    const result = await context.openSelectPanel(selectTarget, options);
+    if (result) {
+      const selectedCategoryId = selectOptions[result.index].key;
+      $filter.selectedCategoryId = selectedCategoryId;
+    }
   }
 
   function updateNoteHtmlContent(root: ShadowRoot, note: NoteWithHtml): void {
@@ -569,6 +688,54 @@
     }
   }
 
+  function _getNoteInputs(): ComponentInput[] {
+    const hasCategories = categories.size > 0;
+
+    const subjectInput = {
+      key: 'subject',
+      type: 'String' as const,
+      label: translations.SUBJECT,
+      required: false,
+      translate: false,
+    };
+    const textInput = {
+      key: 'text',
+      type: 'RichText' as const,
+      label: translations.NOTE,
+      placeholder: translations.NOTE,
+      required: true,
+      translate: false,
+    };
+
+    return [
+      subjectInput,
+      ...(hasCategories ? [_getCategoryInput()] : []),
+      textInput,
+    ];
+  }
+
+  function _getCategoryInput(): ComponentInput {
+    const options =
+      [...(categories?.values() ?? [])].map(category => ({
+        label: category.name,
+        value: category.id,
+      })) ?? [];
+    const categoryInput = {
+      key: 'category',
+      type: 'Selection' as const,
+      label: translations.CATEGORY,
+      required: false,
+      options: [
+        {
+          label: translations.NONE,
+        },
+        ...options,
+      ] as ComponentInput['options'],
+    };
+
+    return categoryInput;
+  }
+
   function _getNoteInfoWho(note: NoteWithHtml) {
     const userName = getNoteUserName(usersDict, note);
     const { width, height, backgroundColor } = getStyle(userName, 22);
@@ -579,11 +746,15 @@
     return `<svg class="user-avatar" style="background-color:${backgroundColor}; width:${width}; height: ${height};"><text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${getFirstLetter(userName)}</text></svg><span><span class="name">${userName}</span>${editedBy}</span>`;
   }
 
-  function _getNoteInfoWhenWhat(note: NoteWithHtml) {
-    const categoryLabel = false
-      ? `<span class="category-label">Maintenance</span>`
-      : '';
-    return `<span>${mapNoteToWhenDateTime(note)}</span>${categoryLabel}`;
+  function _getNoteInfoWhenWhat(note: NoteWithHtml): string {
+    if (note.category !== null) {
+      const category = getCategory(note.category);
+      const categoryLabel = category
+        ? `<span class="category" style="${getCategoryStyle(category)}">${category.name}</span>`
+        : '';
+      return `<span>${mapNoteToWhenDateTime(note)}</span>${categoryLabel}`;
+    }
+    return `<span>${mapNoteToWhenDateTime(note)}</span>`;
   }
 </script>
 
@@ -633,6 +804,40 @@
       {/if}
 
       {#if !!$notes?.length}
+        {#if !isSmall && categories.size > 0 && !searchInputVisible}
+          <div
+            class="filter-select"
+            data-testid="service-logbook-category-filter"
+          >
+            <button
+              class="select-button"
+              data-testid="service-logbook-category-select-button"
+              on:click={handleOpenCategorySelect}
+            >
+              <span>{$selectedCategoryName}</span>
+              <svg fill="currentcolor" height="18" viewBox="0 0 24 24">
+                <path d="M7 10l5 5 5-5z" />
+                <path d="M0 0h24v24H0z" fill="none" />
+              </svg>
+            </button>
+            {#if $filter.selectedCategoryId !== null}
+              <button
+                class="icon-button"
+                data-testid="service-logbook-category-clear-button"
+                on:click={() =>
+                  filter.update(f => ({ ...f, selectedCategoryId: null }))}
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24">
+                  <path d="M0 0h24v24H0z" fill="none" />
+                  <path
+                    d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+                  />
+                </svg>
+              </button>
+            {/if}
+          </div>
+        {/if}
+
         <button
           use:createTooltip={{ message: translations.SEARCH }}
           class="icon-button"
@@ -656,7 +861,7 @@
           class="icon-button"
           class:hidden={searchInputVisible}
           data-testid="service-logbook-export-button"
-          on:click={() => handleDownloadCsvButtonClick($notes)}
+          on:click={() => handleDownloadCsvButtonClick($filteredNotesWithHtml)}
         >
           <svg
             enable-background="new 0 0 24 24"
@@ -691,6 +896,38 @@
       </button>
     </div>
   </div>
+  {#if isSmall && !!$notes?.length && categories.size > 0}
+    <div class="card-chips">
+      <div class="filter-select" data-testid="service-logbook-category-filter">
+        <button
+          class="select-button"
+          data-testid="service-logbook-category-select-button"
+          on:click={handleOpenCategorySelect}
+        >
+          <span>{$selectedCategoryName}</span>
+          <svg fill="currentcolor" height="18" viewBox="0 0 24 24">
+            <path d="M7 10l5 5 5-5z" />
+            <path d="M0 0h24v24H0z" fill="none" />
+          </svg>
+        </button>
+        {#if $filter.selectedCategoryId !== null}
+          <button
+            class="icon-button"
+            data-testid="service-logbook-category-clear-button"
+            on:click={() =>
+              filter.update(f => ({ ...f, selectedCategoryId: null }))}
+          >
+            <svg width="24" height="24" viewBox="0 0 24 24">
+              <path d="M0 0h24v24H0z" fill="none" />
+              <path
+                d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"
+              />
+            </svg>
+          </button>
+        {/if}
+      </div>
+    </div>
+  {/if}
   <div class="card-content">
     {#if !!$loaded}
       {#if !!$filteredNotesWithHtml?.length}
@@ -713,7 +950,21 @@
                     class:is-narrow={isNarrow}
                   >
                     <span class="name">{getNoteUserName(usersDict, note)}</span>
-                    <span class="text">{HtmlToReadableText(note.html)}</span>
+                    {#if $notesWithCategories}
+                      <span
+                        use:createTooltipOnEllipsis
+                        class="category"
+                        style={getCategoryStyle(getCategory(note.category))}
+                        >{getCategory(note.category)?.name ?? ''}
+                      </span>
+                    {/if}
+
+                    <span class="text">
+                      {#if note.subject}
+                        <strong>{note.subject}</strong>
+                        <span> – </span>
+                      {/if}{HtmlToReadableText(note.html)}
+                    </span>
                   </div>
 
                   <div
@@ -755,7 +1006,7 @@
               /><polygon points="11.546,9 20,9 20,7 9.546,7" /></g
             ><path d="M19.743,22.289l1.27-1.27L2.95,2.956l-1.27,1.28" /></svg
           >
-          {#if $filter.searchQuery}
+          {#if $filter.searchQuery || $filter.selectedCategoryId}
             <p>{translations['__TEXT__.NO_MATCHING_RESULTS']}</p>
           {:else}
             <p>{translations.NO_NOTES}</p>
@@ -779,10 +1030,12 @@
 </div>
 
 <style lang="scss">
-  @import './styles/button';
-  @import './styles/card';
-  @import './styles/list';
-  @import './styles/spinner';
+  @use './styles/button' as *;
+  @use './styles/card' as *;
+  @use './styles/list' as *;
+  @use './styles/spinner' as *;
+
+  @use './styles/select' as *;
 
   .hidden {
     visibility: hidden;
@@ -793,8 +1046,8 @@
     flex-direction: row;
     height: 40px;
     margin-left: 8px;
-    border-radius: 8px;
-    background-color: rgba(0, 0, 0, 0.04);
+    border-radius: 20px;
+    background-color: color-mix(in srgb, transparent, currentcolor 4%);
 
     input {
       background-color: transparent;
@@ -806,13 +1059,14 @@
       outline: none;
       line-height: 24px;
       font-size: 14px;
-      color: var(--body-color);
+      color: currentcolor;
     }
 
     .search-input-prefix {
       width: 24px;
       height: 24px;
       padding: 8px;
+      fill: currentcolor;
     }
 
     .search-input-suffix {
@@ -858,10 +1112,6 @@
     }
   }
 
-  .card-header .icon-button {
-    color: var(--body-color);
-  }
-
   .card-header .button {
     display: flex;
     flex-direction: row;
@@ -877,6 +1127,15 @@
       margin-right: 4px;
       fill: var(--accent-color);
     }
+  }
+
+  .card-chips {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px;
+    margin-bottom: 8px;
   }
 
   .card-content {
@@ -899,7 +1158,7 @@
         cursor: pointer;
 
         &:hover {
-          background-color: #0000000a;
+          background-color: color-mix(in srgb, transparent, currentcolor 12%);
         }
       }
 
@@ -954,6 +1213,18 @@
             overflow-wrap: break-word;
           }
 
+          .category {
+            padding: 4px 8px;
+            margin-right: 8px;
+            border-radius: 4px;
+            min-width: 100px;
+            width: 100px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            text-align: center;
+          }
+
           .text {
             white-space: nowrap;
             overflow: hidden;
@@ -987,7 +1258,7 @@
 
   .empty-state {
     font-size: 12px;
-    color: rgba(0, 0, 0, 0.34);
+    color: color-mix(in srgb, currentcolor 54%, transparent);
 
     p {
       width: 100%;

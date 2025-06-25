@@ -5,7 +5,7 @@
   .list-item {
     display: block;
     width: 100%;
-    border-bottom: 1px solid #dadce0;
+    border-bottom: 1px solid color-mix(in srgb, transparent, currentcolor 12%);
     color: currentcolor;
     text-decoration: none;
 
@@ -31,8 +31,8 @@
         align-items: center;
         overflow: hidden;
         border-radius: 20px;
-        background-color: #ebebeb;
-        color: rgb(0 0 0 / 87%);
+        background-color: color-mix(in srgb, transparent, currentcolor 12%);
+        color: color-mix(in srgb, transparent, currentcolor 87%);
         padding: 4px;
 
         svg {
@@ -53,10 +53,10 @@
 
     &[disabled],
     &.disabled {
-      color: rgb(0 0 0 / 34%);
+      color: color-mix(in srgb, transparent, currentcolor 34%);
 
       .list-item-icon {
-        color: rgb(0 0 0 / 34%);
+        color: color-mix(in srgb, transparent, currentcolor 34%);
       }
     }
 
@@ -77,12 +77,12 @@
     &:not([disabled]):hover,
     &:not(.disabled):hover {
       border-image: none;
-      border-color: #dadce0;
-      background: rgb(0 0 0 / 4%);
+      border-color: color-mix(in srgb, transparent, currentcolor 12%);
+      background: color-mix(in srgb, transparent, currentcolor 4%);
 
       &:first-child {
         margin-top: -1px;
-        border-top: 1px solid #dadce0;
+        border-top: 1px solid color-mix(in srgb, transparent, currentcolor 12%);
       }
     }
   }
