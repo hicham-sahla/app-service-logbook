@@ -29,7 +29,7 @@ class Note(BaseModel):
     subject: str | None = Field(default=None)
     category: int | None = Field(default=None)
 
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
 
 
 class Response(BaseModel, Generic[T]):
