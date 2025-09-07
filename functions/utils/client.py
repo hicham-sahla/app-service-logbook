@@ -85,8 +85,19 @@ class NotesClient:
             text=add.text,
             subject=add.subject,
             category=add.category,
+            note_category=add.note_category,
             author_id=self.user_id,
             author_name=self.user_name,
+            additional_user=add.additional_user,
+            day_report=add.day_report,
+            worked_hours=add.worked_hours,
+            mcps_worked_on=add.mcps_worked_on,
+            fcps_worked_on=add.fcps_worked_on,
+            owls_worked_on=add.owls_worked_on,
+            tag_number=add.tag_number,
+            software_version=add.software_version,
+            removed_stack_serial_numbers=add.removed_stack_serial_numbers,
+            added_stack_serial_numbers=add.added_stack_serial_numbers,
         )
 
         result = self.document_client.update_one(
@@ -131,26 +142,35 @@ class NotesClient:
         )
 
     def edit(self, edit: NoteEdit) -> Note | ErrorResponse[None]:
+        update_fields = {
+            "notes.$.text": edit.text,
+            "notes.$.editor_id": self.user_id,
+            "notes.$.editor_name": self.user_name,
+            "notes.$.updated_on": round(time.time() * 1000),
+        }
+
+        # Dynamically add fields to the update query if they are present in the request
+        for field in [
+            "subject",
+            "category",
+            "note_category",
+            "additional_user",
+            "day_report",
+            "worked_hours",
+            "mcps_worked_on",
+            "fcps_worked_on",
+            "owls_worked_on",
+            "tag_number",
+            "software_version",
+            "removed_stack_serial_numbers",
+            "added_stack_serial_numbers",
+        ]:
+            if field in edit.model_fields_set:
+                update_fields[f"notes.$.{field}"] = getattr(edit, field)
+
         result = self.document_client.update_many(
             {**self.in_id_filtermap, "notes._id": ObjectId(edit.note_id)},
-            {
-                "$set": {
-                    "notes.$.text": edit.text,
-                    "notes.$.editor_id": self.user_id,
-                    "notes.$.editor_name": self.user_name,
-                    "notes.$.updated_on": round(time.time() * 1000),
-                    **(
-                        {"notes.$.subject": edit.subject}
-                        if "subject" in edit.model_fields_set
-                        else {}
-                    ),
-                    **(
-                        {"notes.$.category": edit.category}
-                        if "category" in edit.model_fields_set
-                        else {}
-                    ),
-                },
-            },
+            {"$set": update_fields},
         )
 
         note = self.find_one_note(edit.note_id)

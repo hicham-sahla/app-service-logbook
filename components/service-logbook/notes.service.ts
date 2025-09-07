@@ -1,6 +1,6 @@
-import { writable } from 'svelte/store';
-import type { BackendComponentClient } from '@ixon-cdk/types';
-import type { Note } from './types';
+import { writable } from "svelte/store";
+import type { BackendComponentClient } from "@ixon-cdk/types";
+import type { Note } from "./types";
 
 export class NotesService {
   notes = writable<Note[]>([]);
@@ -8,26 +8,30 @@ export class NotesService {
 
   constructor(private client: BackendComponentClient) {}
 
-  add(text: string, subject?: string, category?: number) {
-    return this.client.call('notes.add', { text, subject, category }).then(result => {
+  add(note: Partial<Note>) {
+    return this.client.call("notes.add", note).then((result) => {
       if (result.data.success) {
-        this.notes.update(note => [result.data.data, ...note]);
+        this.notes.update((notes) => [result.data.data, ...notes]);
       }
     });
   }
 
-  edit(id: string, text: string, subject?: string, category?: number | null) {
-    return this.client.call('notes.edit', { note_id: id, text, subject, category }).then(result => {
-      if (result.data.success) {
-        this.notes.update(notes => notes.map(note => (note._id === id ? { ...note, ...result.data.data } : note)));
-      }
-      // The entry list is refreshed whenever a user modifies (or tried to modify) an entry.
-      this.load();
-    });
+  edit(id: string, note: Partial<Note>) {
+    return this.client
+      .call("notes.edit", { note_id: id, ...note })
+      .then((result) => {
+        if (result.data.success) {
+          this.notes.update((notes) =>
+            notes.map((n) => (n._id === id ? { ...n, ...result.data.data } : n))
+          );
+        }
+        // The entry list is refreshed whenever a user modifies (or tried to modify) an entry.
+        this.load();
+      });
   }
 
   load() {
-    return this.client.call('notes.get').then(result => {
+    return this.client.call("notes.get").then((result) => {
       if (result.data.success) {
         this.notes.set(result.data.data);
       }
@@ -36,7 +40,7 @@ export class NotesService {
   }
 
   remove(id: string) {
-    this.notes.update(notes => notes.filter(note => note._id !== id));
-    return this.client.call('notes.remove', { note_id: id });
+    this.notes.update((notes) => notes.filter((note) => note._id !== id));
+    return this.client.call("notes.remove", { note_id: id });
   }
 }

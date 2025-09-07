@@ -1,32 +1,32 @@
 <script lang="ts">
-  import { onMount, tick } from 'svelte';
+  import { onMount, tick } from "svelte";
   import {
     get,
     derived,
     writable,
     type Readable,
     type Writable,
-  } from 'svelte/store';
+  } from "svelte/store";
   import type {
     ComponentContext,
     ComponentInput,
     ResourceData,
     SingleSelectPanelOptions,
-  } from '@ixon-cdk/types';
-  import type { Note, NoteWithHtml, ServiceLogbookCategory } from './types';
-  import { NotesService } from './notes.service';
-  import { deburr, kebabCase } from 'lodash-es';
-  import { DateTime, type DateTimeFormatOptions } from 'luxon';
+  } from "@ixon-cdk/types";
+  import type { Note, NoteWithHtml, ServiceLogbookCategory } from "./types";
+  import { NotesService } from "./notes.service";
+  import { deburr, kebabCase } from "lodash-es";
+  import { DateTime, type DateTimeFormatOptions } from "luxon";
   import {
     getFirstLetter,
     getStyle,
-  } from './letter-avatar/letter-avatar.utils';
-  import { renderMarkdownToHtml } from './formatters/markdown-to-html/markdown-to-html.utils';
-  import { HtmlToReadableText } from './service-logbook.utils';
+  } from "./letter-avatar/letter-avatar.utils";
+  import { renderMarkdownToHtml } from "./formatters/markdown-to-html/markdown-to-html.utils";
+  import { HtmlToReadableText } from "./service-logbook.utils";
   import {
     getCategoryStyle,
     mapAppConfigToServiceLogbookCategoryMapFactory,
-  } from './categories.utils';
+  } from "./categories.utils";
 
   export let context: ComponentContext;
 
@@ -40,7 +40,7 @@
   let mapAppConfigToServiceLogbookCategoryMap: (
     appConfig: ResourceData.AppConfig<{
       categories?: ServiceLogbookCategory[];
-    }> | null,
+    }> | null
   ) => Map<number, ServiceLogbookCategory>;
   let notes: Writable<Note[]>;
   let notesWithHtml: Readable<NoteWithHtml[]>;
@@ -67,7 +67,7 @@
   $: notesWithCategories = derived([notesWithHtml], ([$notes]) => {
     return (
       categories.size > 0 &&
-      ($notes?.some(note => note.category !== undefined) ?? false)
+      ($notes?.some((note) => note.category !== undefined) ?? false)
     );
   });
   $: selectedCategoryName = derived([filter], ([$filter]) => {
@@ -78,31 +78,31 @@
   onMount(() => {
     translations = context.translate(
       [
-        'ADD',
-        'ADD_NOTE',
-        'CATEGORY',
-        'CONFIRM',
-        'EDIT',
-        'EDIT_NOTE',
-        'EXPORT',
-        'EXPORT_TO_CSV',
-        'MORE_OPTIONS',
-        'NO_NOTES',
-        'NONE',
-        'NOTE',
-        'REMOVE',
-        'REMOVE_NOTE',
-        'SEARCH',
-        'SERVICE_LOGBOOK',
-        'SUBJECT',
-        'UNKNOWN_USER',
-        'WHEN',
-        'WHO',
-        '__TEXT__.CONFIRM_NOTE_REMOVAL',
-        '__TEXT__.NO_MATCHING_RESULTS',
+        "ADD",
+        "ADD_NOTE",
+        "CATEGORY",
+        "CONFIRM",
+        "EDIT",
+        "EDIT_NOTE",
+        "EXPORT",
+        "EXPORT_TO_CSV",
+        "MORE_OPTIONS",
+        "NO_NOTES",
+        "NONE",
+        "NOTE",
+        "REMOVE",
+        "REMOVE_NOTE",
+        "SEARCH",
+        "SERVICE_LOGBOOK",
+        "SUBJECT",
+        "UNKNOWN_USER",
+        "WHEN",
+        "WHO",
+        "__TEXT__.CONFIRM_NOTE_REMOVAL",
+        "__TEXT__.NO_MATCHING_RESULTS",
       ],
       undefined,
-      { source: 'global' },
+      { source: "global" }
     );
 
     const backendComponentClient = context.createBackendComponentClient();
@@ -114,12 +114,12 @@
     notesService.load();
 
     notesWithHtml = derived(notes, ($notes: Note[]) =>
-      $notes.map(note => {
+      $notes.map((note) => {
         const html = note.text.match(/^<\/?[a-z][\s\S]*>/)
           ? note.text
           : renderMarkdownToHtml(note.text);
         return { ...note, html };
-      }),
+      })
     );
 
     filteredNotesWithHtml = derived(
@@ -129,7 +129,7 @@
         let notes =
           selectedCategoryId !== null
             ? $notesWithHtml.filter(
-                note => note.category === selectedCategoryId,
+                (note) => note.category === selectedCategoryId
               )
             : $notesWithHtml;
         if (!searchQuery) {
@@ -138,54 +138,54 @@
 
         const query = searchQuery.toLowerCase();
         return notes.filter(
-          note =>
+          (note) =>
             getNoteUserName(usersDict, note).toLowerCase().includes(query) ||
             note.subject?.toLowerCase().includes(query) ||
-            HtmlToReadableText(note.html).toLowerCase().includes(query),
+            HtmlToReadableText(note.html).toLowerCase().includes(query)
         );
-      },
+      }
     );
 
     const resourceDataClient = context.createResourceDataClient();
     resourceDataClient.query(
-      [{ selector: 'AppConfig', fields: ['values'] }],
+      [{ selector: "AppConfig", fields: ["values"] }],
       ([result]) => {
         const appConfig = result.data;
         categories = mapAppConfigToServiceLogbookCategoryMap(appConfig);
-      },
+      }
     );
     resourceDataClient.query(
       [
-        { selector: 'Agent', fields: ['name', 'permissions', 'publicId'] },
-        { selector: 'Asset', fields: ['name', 'permissions', 'publicId'] },
+        { selector: "Agent", fields: ["name", "permissions", "publicId"] },
+        { selector: "Asset", fields: ["name", "permissions", "publicId"] },
       ],
       ([agentResult, assetResult]) => {
         agentOrAsset = agentResult.data ?? assetResult.data;
         agentOrAssetName =
-          assetResult.data?.name ?? agentResult.data?.name ?? '';
-      },
+          assetResult.data?.name ?? agentResult.data?.name ?? "";
+      }
     );
     resourceDataClient.query(
       [
-        { selector: 'MyUser', fields: ['publicId', 'support'] },
-        { selector: 'UserList', fields: ['name', 'publicId'] },
+        { selector: "MyUser", fields: ["publicId", "support"] },
+        { selector: "UserList", fields: ["name", "publicId"] },
       ],
       ([myUserResult, userListResult]) => {
         myUser = myUserResult.data;
         if (userListResult.data) {
           usersDict = userListResult.data.reduce(
             (dict, user) => ({ ...dict, [user.publicId]: user }),
-            {},
+            {}
           );
         }
-      },
+      }
     );
 
     createTooltip(addButton, { message: translations.ADD_NOTE });
 
     width = rootEl.getBoundingClientRect().width;
-    const resizeObserver = new ResizeObserver(entries => {
-      entries.forEach(entry => {
+    const resizeObserver = new ResizeObserver((entries) => {
+      entries.forEach((entry) => {
         width = entry.contentRect.width;
       });
     });
@@ -199,14 +199,14 @@
   function getNoteIsActionable(
     _agentOrAsset: ResourceData.Agent | ResourceData.Asset | null,
     _myUser: ResourceData.MyUser | null,
-    note: Note,
+    note: Note
   ): boolean {
     // Company admin users are able to modify or delete any user’s notes.
-    if (_agentOrAsset?.permissions?.includes('COMPANY_ADMIN')) {
+    if (_agentOrAsset?.permissions?.includes("COMPANY_ADMIN")) {
       return true;
     }
     // Users with rights to manage this device are able to modify or delete any user’s notes.
-    if (_agentOrAsset?.permissions?.includes('MANAGE_AGENT')) {
+    if (_agentOrAsset?.permissions?.includes("MANAGE_AGENT")) {
       return true;
     }
     // Support users are able to modify or delete any user’s notes.
@@ -221,7 +221,7 @@
 
   function getNoteUserName(
     _usersDict: Record<string, ResourceData.User> | null,
-    note: Note,
+    note: Note
   ): string {
     if (_usersDict) {
       /**
@@ -237,12 +237,12 @@
         translations.UNKNOWN_USER
       );
     }
-    return '';
+    return "";
   }
 
   function getNoteEditedBy(
     _usersDict: Record<string, ResourceData.User> | null,
-    note: Note,
+    note: Note
   ): string {
     if (_usersDict && note.editor_id && note.editor_name) {
       /**
@@ -250,27 +250,55 @@
        * If the note has an editor_name, use the editor_name.
        * If none of the above, return an empty string.
        */
-      return _usersDict[note.editor_id]?.name ?? note.editor_name ?? '';
+      return _usersDict[note.editor_id]?.name ?? note.editor_name ?? "";
     }
-    return '';
+    return "";
   }
 
   async function handleAddButtonClick(): Promise<void> {
+    const categories = [
+      "Daily report",
+      "Calibrations",
+      "Software changes",
+      "Settings changes",
+      "Stack replacements",
+      "Other",
+    ];
+
     const result = await context.openFormDialog({
-      title: translations.ADD_NOTE,
-      inputs: _getNoteInputs(),
-      submitButtonText: translations.ADD,
-      discardChangesPrompt: true,
+      title: "Select a category",
+      inputs: [
+        {
+          key: "category",
+          type: "Selection",
+          label: "Category",
+          required: true,
+          options: categories.map((c) => ({ label: c, value: c })),
+        },
+      ],
+      submitButtonText: "Next",
     });
+
     if (result && result.value) {
-      const { subject, text, category } = result.value;
-      notesService.add(text, subject, category);
+      const { category } = result.value;
+      const noteResult = await context.openFormDialog({
+        title: translations.ADD_NOTE,
+        inputs: _getNoteInputs(category),
+        submitButtonText: translations.ADD,
+        discardChangesPrompt: true,
+      });
+
+      if (noteResult && noteResult.value) {
+        notesService.add({ note_category: category, ...noteResult.value });
+      }
     }
   }
 
   function handleDownloadCsvButtonClick(notes: Note[]): void {
-    const hasEditedBy = notes.some(note => note.editor_id && note.editor_name);
-    const hasSubject = notes.some(note => note.subject);
+    const hasEditedBy = notes.some(
+      (note) => note.editor_id && note.editor_name
+    );
+    const hasSubject = notes.some((note) => note.subject);
     const csvHeaders = [
       translations.WHO,
       translations.WHEN,
@@ -278,32 +306,32 @@
       ...(notesWithCategories ? [translations.CATEGORY] : []),
       translations.NOTE,
       ...(hasEditedBy
-        ? [context.translate('EDITED_BY_USER', { user: '' })]
+        ? [context.translate("EDITED_BY_USER", { user: "" })]
         : []),
     ];
-    const csvData = notes.map(note => [
+    const csvData = notes.map((note) => [
       `"${getNoteUserName(usersDict, note)}"`,
       `"${mapNoteToWhenDateTime(note)}"`,
-      ...(hasSubject ? [`"${note.subject?.replace(/"/g, "'") ?? '-'}"`] : []),
+      ...(hasSubject ? [`"${note.subject?.replace(/"/g, "'") ?? "-"}"`] : []),
       ...(notesWithCategories
-        ? [`"${getCategory(note.category)?.name ?? '-'}"`]
+        ? [`"${getCategory(note.category)?.name ?? "-"}"`]
         : []),
       `"${note.text.replace(/"/g, "'")}"`,
-      ...(hasEditedBy ? [`"${getNoteEditedBy(usersDict, note) ?? '-'}"`] : []),
+      ...(hasEditedBy ? [`"${getNoteEditedBy(usersDict, note) ?? "-"}"`] : []),
     ]);
     const csvContent = `${[csvHeaders, ...csvData]
-      .map(row => row.join(','))
-      .join('\n')}`;
-    const data = new Blob([csvContent], { type: 'text/csv' });
+      .map((row) => row.join(","))
+      .join("\n")}`;
+    const data = new Blob([csvContent], { type: "text/csv" });
     const fileName = `${kebabCase(deburr(agentOrAssetName ?? undefined))}_service-logbook-notes.csv`;
 
-    if ('saveAsFile' in context) {
+    if ("saveAsFile" in context) {
       context.saveAsFile(data, fileName);
     }
   }
 
   async function handlePreviewNoteClick(
-    initialNote: NoteWithHtml,
+    initialNote: NoteWithHtml
   ): Promise<void> {
     let root: ShadowRoot;
     let note: NoteWithHtml | null | undefined = initialNote;
@@ -312,13 +340,13 @@
       htmlContent: getNoteHtmlContent(note),
       onopened(shadowRoot, close) {
         root = shadowRoot;
-        const categoryElement = shadowRoot.querySelector('.category');
+        const categoryElement = shadowRoot.querySelector(".category");
         if (categoryElement) {
           createTooltipOnEllipsis(categoryElement as HTMLElement);
         }
 
-        const moreButton = shadowRoot.querySelector('.more');
-        moreButton?.addEventListener('click', event => {
+        const moreButton = shadowRoot.querySelector(".more");
+        moreButton?.addEventListener("click", (event) => {
           if (note) {
             handleMoreActionsButtonClick(event, note, close);
           }
@@ -330,7 +358,7 @@
       pagination: {
         pageCount: previewNotes.length,
         initialPageIndex: previewNotes.indexOf(note),
-        onpagechange: index => {
+        onpagechange: (index) => {
           note = previewNotes.at(index);
           if (root && note) {
             updateNoteHtmlContent(root, note);
@@ -451,7 +479,7 @@
   async function handleRemoveNoteButtonClick(note: Note): Promise<void> {
     const confirmed = await context.openConfirmDialog({
       title: translations.REMOVE_NOTE,
-      message: translations['__TEXT__.CONFIRM_NOTE_REMOVAL'],
+      message: translations["__TEXT__.CONFIRM_NOTE_REMOVAL"],
       confirmButtonText: translations.REMOVE,
       confirmCheckbox: true,
       destructive: true,
@@ -464,17 +492,17 @@
   async function handleMoreActionsButtonClick(
     event: Event,
     note: Note,
-    closeDialog?: () => void,
+    closeDialog?: () => void
   ): Promise<void> {
     event.stopImmediatePropagation();
     const actions = [
-      { type: 'edit', title: translations.EDIT },
-      { type: 'export', title: translations.EXPORT },
-      { type: 'remove', title: translations.REMOVE, destructive: true },
-    ].filter(action => {
+      { type: "edit", title: translations.EDIT },
+      { type: "export", title: translations.EXPORT },
+      { type: "remove", title: translations.REMOVE, destructive: true },
+    ].filter((action) => {
       switch (action.type) {
-        case 'edit':
-        case 'remove':
+        case "edit":
+        case "remove":
           return getNoteIsActionable(agentOrAsset, myUser, note);
         default:
           return true;
@@ -487,16 +515,16 @@
     if (result) {
       const resultAction = actions[result.index];
       switch (resultAction?.type) {
-        case 'edit':
+        case "edit":
           handleEditNoteButtonClick(note);
           if (closeDialog) {
             closeDialog();
           }
           break;
-        case 'export':
+        case "export":
           handleDownloadCsvButtonClick([note]);
           break;
-        case 'remove':
+        case "remove":
           handleRemoveNoteButtonClick(note);
           if (closeDialog) {
             closeDialog();
@@ -507,27 +535,26 @@
   }
 
   async function handleEditNoteButtonClick(note: Note): Promise<void> {
-    const hasCategories = categories.size > 0;
-
     const result = await context.openFormDialog({
       title: translations.EDIT_NOTE,
-      inputs: _getNoteInputs(),
+      inputs: _getNoteInputs(note.note_category || "Other"),
       initialValue: {
-        subject: note.subject,
-        ...(hasCategories ? { category: note?.category ?? null } : {}),
-        text: note.text,
+        ...note,
+        day_report: note.day_report
+          ? new Date(note.day_report).toISOString().split("T")[0]
+          : undefined,
       },
       submitButtonText: translations.CONFIRM,
       discardChangesPrompt: true,
     });
+
     if (result && result.value) {
-      const { subject, text, category } = result.value;
-      await notesService.edit(
-        note._id,
-        text,
-        subject,
-        hasCategories ? (category ?? null) : undefined,
-      );
+      const { day_report, ...rest } = result.value;
+      const updatedNote = { ...rest };
+      if (day_report) {
+        updatedNote.day_report = new Date(day_report).getTime();
+      }
+      await notesService.edit(note._id, updatedNote);
     }
   }
 
@@ -563,42 +590,42 @@
       ? _mapNoteToFormattedDateTime(
           note,
           {
-            month: 'short',
-            day: 'numeric',
+            month: "short",
+            day: "numeric",
           },
-          date,
+          date
         )
       : _mapNoteToFormattedDateTime(
           note,
           {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
           },
-          date,
+          date
         );
   }
 
   function _mapNoteToFormattedDateTime(
     note: Note,
     formatOpts: DateTimeFormatOptions = {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: 'numeric',
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
     },
     date: DateTime = DateTime.fromMillis(note.created_on, {
       locale: context.appData.locale,
       zone: context.appData.timeZone,
-    }),
+    })
   ): string {
     return date.toLocaleString(formatOpts);
   }
 
   function createTooltip(
     button: HTMLButtonElement,
-    options: { message: string },
+    options: { message: string }
   ): void {
     context.createTooltip(button, {
       message: options.message,
@@ -621,7 +648,7 @@
   }
 
   function getNoteHtmlContent(note: NoteWithHtml): string {
-    const subject = note.subject ? `<h2>${note.subject}</h2>` : '';
+    const subject = note.subject ? `<h2>${note.subject}</h2>` : "";
     const sanitizedHtml = context.sanitizeHtml(note.html, {
       allowStyleAttr: true,
     });
@@ -647,17 +674,17 @@
   async function handleOpenCategorySelect(event: MouseEvent): Promise<void> {
     const target = event.target as HTMLElement;
     const selectTarget =
-      (target.closest('.select-button') as HTMLElement) ?? target;
+      (target.closest(".select-button") as HTMLElement) ?? target;
 
     const selectOptions = Array.from(categories.entries()).map(
       ([key, category]) => ({
         text: category.name,
         key,
-      }),
+      })
     );
     const selected = $filter.selectedCategoryId
       ? selectOptions.findIndex(
-          option => option.key === $filter.selectedCategoryId,
+          (option) => option.key === $filter.selectedCategoryId
         )
       : undefined;
 
@@ -673,9 +700,9 @@
   }
 
   function updateNoteHtmlContent(root: ShadowRoot, note: NoteWithHtml): void {
-    const noteInfoWho = root.querySelector('.note-info.who');
-    const noteInfoWhenWhat = root.querySelector('.note-info.when-what');
-    const cardContent = root.querySelector('.card-content');
+    const noteInfoWho = root.querySelector(".note-info.who");
+    const noteInfoWhenWhat = root.querySelector(".note-info.when-what");
+    const cardContent = root.querySelector(".card-content");
     if (noteInfoWho) {
       noteInfoWho.innerHTML = _getNoteInfoWho(note);
     }
@@ -684,45 +711,109 @@
     }
     if (cardContent) {
       cardContent.innerHTML =
-        context.sanitizeHtml(note.html, { allowStyleAttr: true }) ?? '';
+        context.sanitizeHtml(note.html, { allowStyleAttr: true }) ?? "";
     }
   }
 
-  function _getNoteInputs(): ComponentInput[] {
-    const hasCategories = categories.size > 0;
+  function _getNoteInputs(category: string): ComponentInput[] {
+    const inputs: ComponentInput[] = [];
 
-    const subjectInput = {
-      key: 'subject',
-      type: 'String' as const,
-      label: translations.SUBJECT,
-      required: false,
-      translate: false,
-    };
-    const textInput = {
-      key: 'text',
-      type: 'RichText' as const,
+    switch (category) {
+      case "Daily report":
+        inputs.push(
+          {
+            key: "additional_user",
+            type: "String",
+            label: "Additional User",
+            required: false,
+          },
+          {
+            key: "day_report",
+            type: "Date",
+            label: "Day Report",
+            required: false,
+          },
+          {
+            key: "worked_hours",
+            type: "Number",
+            label: "Worked Hours",
+            required: false,
+          },
+          {
+            key: "mcps_worked_on",
+            type: "String",
+            label: "MCPs Worked On",
+            required: false,
+          },
+          {
+            key: "fcps_worked_on",
+            type: "String",
+            label: "FCPs Worked On",
+            required: false,
+          },
+          {
+            key: "owls_worked_on",
+            type: "String",
+            label: "OWLs Worked On",
+            required: false,
+          }
+        );
+        break;
+      case "Calibrations":
+        inputs.push({
+          key: "tag_number",
+          type: "String",
+          label: "Tag Number",
+          required: false,
+        });
+        break;
+      case "Software changes":
+        inputs.push({
+          key: "software_version",
+          type: "String",
+          label: "Software Version",
+          required: false,
+        });
+        break;
+      case "Stack replacements":
+        inputs.push(
+          {
+            key: "removed_stack_serial_numbers",
+            type: "String",
+            label: "Removed Stack Serial Numbers",
+            required: false,
+          },
+          {
+            key: "added_stack_serial_numbers",
+            type: "String",
+            label: "Added Stack Serial Numbers",
+            required: false,
+          }
+        );
+        break;
+    }
+
+    inputs.push({
+      key: "text",
+      type: "RichText" as const,
       label: translations.NOTE,
       placeholder: translations.NOTE,
       required: true,
       translate: false,
-    };
+    });
 
-    return [
-      subjectInput,
-      ...(hasCategories ? [_getCategoryInput()] : []),
-      textInput,
-    ];
+    return inputs;
   }
 
   function _getCategoryInput(): ComponentInput {
     const options =
-      [...(categories?.values() ?? [])].map(category => ({
+      [...(categories?.values() ?? [])].map((category) => ({
         label: category.name,
         value: category.id,
       })) ?? [];
     const categoryInput = {
-      key: 'category',
-      type: 'Selection' as const,
+      key: "category",
+      type: "Selection" as const,
       label: translations.CATEGORY,
       required: false,
       options: [
@@ -730,7 +821,7 @@
           label: translations.NONE,
         },
         ...options,
-      ] as ComponentInput['options'],
+      ] as ComponentInput["options"],
     };
 
     return categoryInput;
@@ -741,8 +832,8 @@
     const { width, height, backgroundColor } = getStyle(userName, 22);
     const editedBy =
       note.editor_id && note.editor_name
-        ? `<span class="edited-by"><i>${context.translate('EDITED_BY_USER', { user: getNoteEditedBy(usersDict, note) })}</i></span>`
-        : '';
+        ? `<span class="edited-by"><i>${context.translate("EDITED_BY_USER", { user: getNoteEditedBy(usersDict, note) })}</i></span>`
+        : "";
     return `<svg class="user-avatar" style="background-color:${backgroundColor}; width:${width}; height: ${height};"><text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${getFirstLetter(userName)}</text></svg><span><span class="name">${userName}</span>${editedBy}</span>`;
   }
 
@@ -751,7 +842,7 @@
       const category = getCategory(note.category);
       const categoryLabel = category
         ? `<span class="category" style="${getCategoryStyle(category)}">${category.name}</span>`
-        : '';
+        : "";
       return `<span>${mapNoteToWhenDateTime(note)}</span>${categoryLabel}`;
     }
     return `<span>${mapNoteToWhenDateTime(note)}</span>`;
@@ -825,7 +916,7 @@
                 class="icon-button"
                 data-testid="service-logbook-category-clear-button"
                 on:click={() =>
-                  filter.update(f => ({ ...f, selectedCategoryId: null }))}
+                  filter.update((f) => ({ ...f, selectedCategoryId: null }))}
               >
                 <svg width="24" height="24" viewBox="0 0 24 24">
                   <path d="M0 0h24v24H0z" fill="none" />
@@ -915,7 +1006,7 @@
             class="icon-button"
             data-testid="service-logbook-category-clear-button"
             on:click={() =>
-              filter.update(f => ({ ...f, selectedCategoryId: null }))}
+              filter.update((f) => ({ ...f, selectedCategoryId: null }))}
           >
             <svg width="24" height="24" viewBox="0 0 24 24">
               <path d="M0 0h24v24H0z" fill="none" />
@@ -944,6 +1035,7 @@
                   on:click={() => handlePreviewNoteClick(note)}
                   on:keyup={() => handlePreviewNoteClick(note)}
                   role="button"
+                  tabindex="0"
                 >
                   <div
                     class="list-item-flex-container"
@@ -955,7 +1047,7 @@
                         use:createTooltipOnEllipsis
                         class="category"
                         style={getCategoryStyle(getCategory(note.category))}
-                        >{getCategory(note.category)?.name ?? ''}
+                        >{getCategory(note.category)?.name ?? ""}
                       </span>
                     {/if}
 
@@ -975,7 +1067,7 @@
                     <button
                       class="icon-button more"
                       use:createTooltip={{ message: translations.MORE_OPTIONS }}
-                      on:click={event =>
+                      on:click={(event) =>
                         handleMoreActionsButtonClick(event, note)}
                       data-testid="service-logbook-list-item-more-button"
                     >
@@ -1007,7 +1099,7 @@
             ><path d="M19.743,22.289l1.27-1.27L2.95,2.956l-1.27,1.28" /></svg
           >
           {#if $filter.searchQuery || $filter.selectedCategoryId}
-            <p>{translations['__TEXT__.NO_MATCHING_RESULTS']}</p>
+            <p>{translations["__TEXT__.NO_MATCHING_RESULTS"]}</p>
           {:else}
             <p>{translations.NO_NOTES}</p>
           {/if}
@@ -1030,12 +1122,12 @@
 </div>
 
 <style lang="scss">
-  @use './styles/button' as *;
-  @use './styles/card' as *;
-  @use './styles/list' as *;
-  @use './styles/spinner' as *;
+  @use "./styles/button" as *;
+  @use "./styles/card" as *;
+  @use "./styles/list" as *;
+  @use "./styles/spinner" as *;
 
-  @use './styles/select' as *;
+  @use "./styles/select" as *;
 
   .hidden {
     visibility: hidden;
