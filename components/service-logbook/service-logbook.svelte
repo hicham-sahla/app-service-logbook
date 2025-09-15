@@ -282,7 +282,7 @@
     if (result && result.value) {
       const { category } = result.value;
       const noteResult = await context.openFormDialog({
-        title: translations.ADD_NOTE,
+        title: `${translations.ADD} ${category}`,
         inputs: _getNoteInputs(category),
         submitButtonText: translations.ADD,
         discardChangesPrompt: true,
@@ -536,7 +536,7 @@
 
   async function handleEditNoteButtonClick(note: Note): Promise<void> {
     const result = await context.openFormDialog({
-      title: translations.EDIT_NOTE,
+      title: `${translations.EDIT} ${note.note_category}`,
       inputs: _getNoteInputs(note.note_category || "Other"),
       initialValue: {
         ...note,
@@ -788,8 +788,8 @@
     inputs.push({
       key: "text",
       type: "RichText" as const,
-      label: translations.NOTE,
-      placeholder: translations.NOTE,
+      label: "Description of event",
+      placeholder: "Description of event",
       required: true,
       translate: false,
     });
