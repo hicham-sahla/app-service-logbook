@@ -32,7 +32,8 @@ export interface Note {
 
   // Daily report
   additional_user: string | null;
-  day_report: number | null;
+  performed_on: number | null;
+  week_number: number | null;
   worked_hours: number | null;
   mcps_worked_on: string | null;
   fcps_worked_on: string | null;

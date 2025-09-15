@@ -32,7 +32,8 @@ class Note(BaseModel):
 
     # Daily report
     additional_user: str | None = Field(default=None)
-    day_report: int | None = Field(default=None)
+    performed_on: int | None = Field(default=None)
+    week_number: int | None = Field(default=None)
     worked_hours: int | None = Field(default=None)
     mcps_worked_on: str | None = Field(default=None)
     fcps_worked_on: str | None = Field(default=None)
@@ -75,7 +76,8 @@ class NoteEdit(BaseModel):
 
     # Daily report
     additional_user: str | None = Field(default=None)
-    day_report: int | None = Field(default=None)
+    performed_on: int | None = Field(default=None)
+    week_number: int | None = Field(default=None)
     worked_hours: int | None = Field(default=None)
     mcps_worked_on: str | None = Field(default=None)
     fcps_worked_on: str | None = Field(default=None)
@@ -100,7 +102,8 @@ class NoteAdd(BaseModel):
 
     # Daily report
     additional_user: str | None = Field(default=None)
-    day_report: int | None = Field(default=None)
+    performed_on: int | None = Field(default=None)
+    week_number: int | None = Field(default=None)
     worked_hours: int | None = Field(default=None)
     mcps_worked_on: str | None = Field(default=None)
     fcps_worked_on: str | None = Field(default=None)

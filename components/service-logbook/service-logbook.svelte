@@ -265,68 +265,186 @@
       "Other",
     ];
 
-    const result = await context.openFormDialog({
-      title: "Select a category",
+    let step = "category";
+    let category: string | null = null;
+    let performed_on: string | null = null;
+    let date: DateTime | null = null;
+
+    while (step !== "exit") {
+      if (step === "category") {
+        const categoryResult = await context.openFormDialog({
+          title: "Select a category",
+          inputs: [
+            {
+              key: "category",
+              type: "Selection",
+              label: "Category",
+              required: true,
+              options: categories.map((c) => ({ label: c, value: c })),
+            },
+          ],
+          submitButtonText: "Next",
+          cancelButtonText: "Cancel",
+        });
+
+        if (categoryResult && categoryResult.value) {
+          category = categoryResult.value.category;
+          step = category === "Daily report" ? "date" : "note";
+        } else {
+          step = "exit";
+        }
+      } else if (step === "date") {
+        const dateResult = await context.openFormDialog({
+          title: "Select Date",
+          inputs: [
+            {
+              key: "performed_on",
+              type: "Date",
+              label: "Performed on",
+              required: true,
+            },
+          ],
+          submitButtonText: "Next",
+          cancelButtonText: "Previous",
+        });
+
+        if (dateResult && dateResult.value) {
+          performed_on = dateResult.value.performed_on;
+          if (performed_on) {
+            date = DateTime.fromISO(performed_on);
+          }
+          step = "note";
+        } else {
+          step = "category"; // Go back to category selection
+        }
+      } else if (step === "note") {
+        if (!category) {
+          step = "category";
+          continue;
+        }
+        const noteResult = await context.openFormDialog({
+          title: `${translations.ADD} ${category}`,
+          inputs: _getNoteInputs(category),
+          initialValue: {
+            performed_on,
+            week_number_display: date
+              ? `Week ${date.weekNumber} - ${date.weekdayLong}`
+              : undefined,
+          },
+          submitButtonText: translations.ADD,
+          cancelButtonText: "Previous",
+          discardChangesPrompt: true,
+        });
+
+        if (noteResult && noteResult.value) {
+          if (category === "Daily report" && date) {
+            notesService.add({
+              note_category: category,
+              ...noteResult.value,
+              week_number: date.weekNumber,
+              performed_on: date.toMillis(),
+            });
+          } else {
+            notesService.add({ note_category: category, ...noteResult.value });
+          }
+          step = "exit";
+        } else {
+          step = category === "Daily report" ? "date" : "category"; // Go back
+        }
+      }
+    }
+  }
+
+  async function handleDownloadCsvButtonClick(notes: Note[]): Promise<void> {
+    const categories = Array.from(
+      new Set(notes.map((n) => n.note_category).filter(Boolean))
+    );
+    const categoryOptions = categories.map((c) => ({ label: c, value: c }));
+
+    const filterResult = await context.openFormDialog({
+      title: "Export Options",
       inputs: [
         {
           key: "category",
           type: "Selection",
-          label: "Category",
-          required: true,
-          options: categories.map((c) => ({ label: c, value: c })),
+          label: "Filter by Category",
+          options: [{ label: "All", value: "all" }, ...categoryOptions],
         },
       ],
       submitButtonText: "Next",
     });
 
-    if (result && result.value) {
-      const { category } = result.value;
-      const noteResult = await context.openFormDialog({
-        title: `${translations.ADD} ${category}`,
-        inputs: _getNoteInputs(category),
-        submitButtonText: translations.ADD,
-        discardChangesPrompt: true,
-      });
+    if (filterResult && filterResult.value) {
+      const { category } = filterResult.value;
+      let weekNumberResult;
 
-      if (noteResult && noteResult.value) {
-        notesService.add({ note_category: category, ...noteResult.value });
+      if (category === "Daily report") {
+        weekNumberResult = await context.openFormDialog({
+          title: "Export Options",
+          inputs: [
+            {
+              key: "week_number",
+              type: "Number",
+              label: "Filter by Week Number",
+            },
+          ],
+          submitButtonText: "Export",
+        });
       }
-    }
-  }
 
-  function handleDownloadCsvButtonClick(notes: Note[]): void {
-    const hasEditedBy = notes.some(
-      (note) => note.editor_id && note.editor_name
-    );
-    const hasSubject = notes.some((note) => note.subject);
-    const csvHeaders = [
-      translations.WHO,
-      translations.WHEN,
-      ...(hasSubject ? [translations.SUBJECT] : []),
-      ...(notesWithCategories ? [translations.CATEGORY] : []),
-      translations.NOTE,
-      ...(hasEditedBy
-        ? [context.translate("EDITED_BY_USER", { user: "" })]
-        : []),
-    ];
-    const csvData = notes.map((note) => [
-      `"${getNoteUserName(usersDict, note)}"`,
-      `"${mapNoteToWhenDateTime(note)}"`,
-      ...(hasSubject ? [`"${note.subject?.replace(/"/g, "'") ?? "-"}"`] : []),
-      ...(notesWithCategories
-        ? [`"${getCategory(note.category)?.name ?? "-"}"`]
-        : []),
-      `"${note.text.replace(/"/g, "'")}"`,
-      ...(hasEditedBy ? [`"${getNoteEditedBy(usersDict, note) ?? "-"}"`] : []),
-    ]);
-    const csvContent = `${[csvHeaders, ...csvData]
-      .map((row) => row.join(","))
-      .join("\n")}`;
-    const data = new Blob([csvContent], { type: "text/csv" });
-    const fileName = `${kebabCase(deburr(agentOrAssetName ?? undefined))}_service-logbook-notes.csv`;
+      let filteredNotes = notes;
 
-    if ("saveAsFile" in context) {
-      context.saveAsFile(data, fileName);
+      if (category && category !== "all") {
+        filteredNotes = filteredNotes.filter(
+          (note) => note.note_category === category
+        );
+      }
+
+      if (
+        category === "Daily report" &&
+        weekNumberResult &&
+        weekNumberResult.value
+      ) {
+        const { week_number } = weekNumberResult.value;
+        filteredNotes = filteredNotes.filter(
+          (note) => note.week_number === week_number
+        );
+      }
+
+      const hasEditedBy = filteredNotes.some(
+        (note) => note.editor_id && note.editor_name
+      );
+      const hasSubject = filteredNotes.some((note) => note.subject);
+      const csvHeaders = [
+        translations.WHO,
+        translations.WHEN,
+        ...(hasSubject ? [translations.SUBJECT] : []),
+        ...(notesWithCategories ? [translations.CATEGORY] : []),
+        translations.NOTE,
+        ...(hasEditedBy
+          ? [context.translate("EDITED_BY_USER", { user: "" })]
+          : []),
+      ];
+      const csvData = filteredNotes.map((note) => [
+        `"${getNoteUserName(usersDict, note)}"`,
+        `"${mapNoteToWhenDateTime(note)}"`,
+        ...(hasSubject ? [`"${note.subject?.replace(/"/g, "'") ?? "-"}"`] : []),
+        ...(notesWithCategories
+          ? [`"${getCategory(note.category)?.name ?? "-"}"`]
+          : []),
+        `"${note.text.replace(/"/g, "'")}"`,
+        ...(hasEditedBy
+          ? [`"${getNoteEditedBy(usersDict, note) ?? "-"}"`]
+          : []),
+      ]);
+      const csvContent = `${[csvHeaders, ...csvData]
+        .map((row) => row.join(","))
+        .join("\n")}`;
+      const data = new Blob([csvContent], { type: "text/csv" });
+      const fileName = `${kebabCase(deburr(agentOrAssetName ?? undefined))}_service-logbook-notes.csv`;
+      if ("saveAsFile" in context) {
+        context.saveAsFile(data, fileName);
+      }
     }
   }
 
@@ -535,24 +653,31 @@
   }
 
   async function handleEditNoteButtonClick(note: Note): Promise<void> {
+    const performed_on_date = note.performed_on
+      ? DateTime.fromMillis(note.performed_on)
+      : null;
     const result = await context.openFormDialog({
       title: `${translations.EDIT} ${note.note_category}`,
-      inputs: _getNoteInputs(note.note_category || "Other"),
+      inputs: _getNoteInputs(note.note_category || "Other", true),
       initialValue: {
         ...note,
-        day_report: note.day_report
-          ? new Date(note.day_report).toISOString().split("T")[0]
+        performed_on: performed_on_date
+          ? performed_on_date.toISODate()
+          : undefined,
+        week_number_display: performed_on_date
+          ? `Week ${performed_on_date.weekNumber} - ${performed_on_date.weekdayLong}`
           : undefined,
       },
       submitButtonText: translations.CONFIRM,
       discardChangesPrompt: true,
     });
-
     if (result && result.value) {
-      const { day_report, ...rest } = result.value;
+      const { performed_on, ...rest } = result.value;
       const updatedNote = { ...rest };
-      if (day_report) {
-        updatedNote.day_report = new Date(day_report).getTime();
+      if (performed_on) {
+        const date = DateTime.fromISO(performed_on);
+        updatedNote.performed_on = date.toMillis();
+        updatedNote.week_number = date.weekNumber;
       }
       await notesService.edit(note._id, updatedNote);
     }
@@ -715,9 +840,8 @@
     }
   }
 
-  function _getNoteInputs(category: string): ComponentInput[] {
+  function _getNoteInputs(category: string, isEdit = false): ComponentInput[] {
     const inputs: ComponentInput[] = [];
-
     switch (category) {
       case "Daily report":
         inputs.push(
@@ -728,9 +852,17 @@
             required: false,
           },
           {
-            key: "day_report",
+            key: "performed_on",
             type: "Date",
-            label: "Day Report",
+            label: "Performed on",
+            required: true,
+            disabled: true,
+          },
+          {
+            key: "week_number_display",
+            type: "String",
+            label: "Week Number",
+            disabled: true,
             required: false,
           },
           {
@@ -770,6 +902,12 @@
       case "Stack replacements":
         inputs.push(
           {
+            key: "performed_on",
+            type: "Date",
+            label: "Performed on",
+            required: true,
+          },
+          {
             key: "removed_stack_serial_numbers",
             type: "String",
             label: "Removed Stack Serial Numbers",
@@ -793,7 +931,6 @@
       required: true,
       translate: false,
     });
-
     return inputs;
   }
 
