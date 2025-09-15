@@ -42,7 +42,6 @@ class Note(BaseModel):
     tag_number: str | None = Field(default=None)
 
     # Software changes
-    software_version: str | None = Field(default=None)
 
     # Stack replacements
     removed_stack_serial_numbers: str | None = Field(default=None)
@@ -73,8 +72,8 @@ class NoteEdit(BaseModel):
     subject: str | None = Field(default=None)
     category: int | None = Field(default=None)
     note_category: str | None = Field(default=None)
-    
- # Daily report
+
+    # Daily report
     additional_user: str | None = Field(default=None)
     day_report: int | None = Field(default=None)
     worked_hours: int | None = Field(default=None)
@@ -86,11 +85,11 @@ class NoteEdit(BaseModel):
     tag_number: str | None = Field(default=None)
 
     # Software changes
-    software_version: str | None = Field(default=None)
 
     # Stack replacements
     removed_stack_serial_numbers: str | None = Field(default=None)
     added_stack_serial_numbers: str | None = Field(default=None)
+
 
 class NoteAdd(BaseModel):
     text: str
@@ -111,7 +110,6 @@ class NoteAdd(BaseModel):
     tag_number: str | None = Field(default=None)
 
     # Software changes
-    software_version: str | None = Field(default=None)
 
     # Stack replacements
     removed_stack_serial_numbers: str | None = Field(default=None)

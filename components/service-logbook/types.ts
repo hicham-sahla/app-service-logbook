@@ -42,7 +42,6 @@ export interface Note {
   tag_number: string | null;
 
   // Software changes
-  software_version: string | null;
 
   // Stack replacements
   removed_stack_serial_numbers: string | null;

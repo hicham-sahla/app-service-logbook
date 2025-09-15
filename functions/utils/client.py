@@ -95,7 +95,6 @@ class NotesClient:
             fcps_worked_on=add.fcps_worked_on,
             owls_worked_on=add.owls_worked_on,
             tag_number=add.tag_number,
-            software_version=add.software_version,
             removed_stack_serial_numbers=add.removed_stack_serial_numbers,
             added_stack_serial_numbers=add.added_stack_serial_numbers,
         )
@@ -161,7 +160,6 @@ class NotesClient:
             "fcps_worked_on",
             "owls_worked_on",
             "tag_number",
-            "software_version",
             "removed_stack_serial_numbers",
             "added_stack_serial_numbers",
         ]:

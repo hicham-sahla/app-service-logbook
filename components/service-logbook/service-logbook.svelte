@@ -767,14 +767,6 @@
           required: false,
         });
         break;
-      case "Software changes":
-        inputs.push({
-          key: "software_version",
-          type: "String",
-          label: "Software Version",
-          required: false,
-        });
-        break;
       case "Stack replacements":
         inputs.push(
           {
