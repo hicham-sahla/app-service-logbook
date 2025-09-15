@@ -844,12 +844,23 @@
     const inputs: ComponentInput[] = [];
     switch (category) {
       case "Daily report":
+        // Create user options from the usersDict
+        const userOptions = usersDict
+          ? Object.values(usersDict)
+              .filter((user) => user.name) // Filter out users without names
+              .map((user) => ({
+                value: user.name!, // Non-null assertion since we filtered above
+                label: user.name!,
+                shortLabel: user.name!,
+              }))
+          : [];
         inputs.push(
           {
             key: "additional_user",
-            type: "String",
+            type: "Selection",
             label: "Additional User",
             required: false,
+            options: userOptions,
           },
           {
             key: "performed_on",
