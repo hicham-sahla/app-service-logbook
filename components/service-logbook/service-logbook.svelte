@@ -83,41 +83,55 @@
   ): Promise<{ value: string; label: string; shortLabel: string }[]> {
     if (!agentId) return [];
 
+    let allVariables: any[] = [];
+    let moreAfter: string | null = null;
+
     try {
-      const url = context.getApiUrl("AgentDataVariableList", {
-        agentId: agentId,
-        "page-size": 4000,
-        fields: "name", // We only need the name field
-      });
+      do {
+        const params: { [key: string]: string } = {
+          agentId: agentId,
+          "page-size": "1000", // Fetch in chunks of 1000
+          fields: "name",
+        };
+        if (moreAfter) {
+          params["page-after"] = moreAfter;
+        }
 
-      const response = await fetch(url, {
-        headers: {
-          Authorization: "Bearer " + context.appData.accessToken.secretId,
-          "Api-Application": context.appData.apiAppId,
-          "Api-Company": context.appData.company.publicId,
-          "Api-Version": "2",
-        },
-        method: "GET",
-      });
-
-      const data = await response.json();
-
-      if (data && data.data) {
-        // Sort the data variables alphabetically by name
-        const sortedVariables = data.data.sort((a: any, b: any) => {
-          return a.name.localeCompare(b.name, undefined, {
-            numeric: true,
-            sensitivity: "base",
-          });
+        const url = context.getApiUrl("AgentDataVariableList", params);
+        const response = await fetch(url, {
+          headers: {
+            Authorization: "Bearer " + context.appData.accessToken.secretId,
+            "Api-Application": context.appData.apiAppId,
+            "Api-Company": context.appData.company.publicId,
+            "Api-Version": "2",
+          },
+          method: "GET",
         });
 
-        // Map the sorted data variables to options format
-        return sortedVariables.map((variable: any) => ({
-          value: variable.name,
-          label: variable.name,
-          shortLabel: variable.name,
-        }));
-      }
+        const data = await response.json();
+
+        if (data && data.data) {
+          allVariables = allVariables.concat(data.data);
+          moreAfter = data.moreAfter;
+        } else {
+          moreAfter = null;
+        }
+      } while (moreAfter);
+
+      // Sort the combined data variables alphabetically by name
+      const sortedVariables = allVariables.sort((a: any, b: any) => {
+        return a.name.localeCompare(b.name, undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
+
+      // Map the sorted data variables to options format
+      return sortedVariables.map((variable: any) => ({
+        value: variable.name,
+        label: variable.name,
+        shortLabel: variable.name,
+      }));
     } catch (error) {
       console.error("Failed to fetch data variables:", error);
     }
