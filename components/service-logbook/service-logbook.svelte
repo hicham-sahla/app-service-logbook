@@ -51,7 +51,11 @@
   let usersDict: Record<string, ResourceData.User> | null = null;
   let width: number | null = null;
   let now = DateTime.now();
-
+  let dataVariableOptions: {
+    value: string;
+    label: string;
+    shortLabel: string;
+  }[] = [];
   const filter: Writable<{
     searchQuery: string | null;
     selectedCategoryId: number | null;
@@ -74,7 +78,52 @@
     const category = getCategory($filter.selectedCategoryId);
     return category ? category.name : translations.CATEGORY;
   });
+  async function fetchDataVariables(
+    agentId: string
+  ): Promise<{ value: string; label: string; shortLabel: string }[]> {
+    if (!agentId) return [];
 
+    try {
+      const url = context.getApiUrl("AgentDataVariableList", {
+        agentId: agentId,
+        "page-size": 4000,
+        fields: "name", // We only need the name field
+      });
+
+      const response = await fetch(url, {
+        headers: {
+          Authorization: "Bearer " + context.appData.accessToken.secretId,
+          "Api-Application": context.appData.apiAppId,
+          "Api-Company": context.appData.company.publicId,
+          "Api-Version": "2",
+        },
+        method: "GET",
+      });
+
+      const data = await response.json();
+
+      if (data && data.data) {
+        // Sort the data variables alphabetically by name
+        const sortedVariables = data.data.sort((a: any, b: any) => {
+          return a.name.localeCompare(b.name, undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        });
+
+        // Map the sorted data variables to options format
+        return sortedVariables.map((variable: any) => ({
+          value: variable.name,
+          label: variable.name,
+          shortLabel: variable.name,
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to fetch data variables:", error);
+    }
+
+    return [];
+  }
   onMount(() => {
     translations = context.translate(
       [
@@ -159,10 +208,17 @@
         { selector: "Agent", fields: ["name", "permissions", "publicId"] },
         { selector: "Asset", fields: ["name", "permissions", "publicId"] },
       ],
-      ([agentResult, assetResult]) => {
+      async ([agentResult, assetResult]) => {
         agentOrAsset = agentResult.data ?? assetResult.data;
         agentOrAssetName =
           assetResult.data?.name ?? agentResult.data?.name ?? "";
+
+        // Fetch data variables if we have an agent
+        if (agentResult.data?.publicId) {
+          dataVariableOptions = await fetchDataVariables(
+            agentResult.data.publicId
+          );
+        }
       }
     );
     resourceDataClient.query(
@@ -905,9 +961,12 @@
       case "Calibrations":
         inputs.push({
           key: "tag_number",
-          type: "String",
+          type: dataVariableOptions.length > 0 ? "Selection" : "String",
           label: "Tag Number",
           required: false,
+          ...(dataVariableOptions.length > 0
+            ? { options: dataVariableOptions }
+            : { placeholder: "Enter tag number" }),
         });
         break;
       case "Stack replacements":
@@ -931,6 +990,17 @@
             required: false,
           }
         );
+        break;
+      case "Settings changes":
+        inputs.push({
+          key: "tag_number",
+          type: dataVariableOptions.length > 0 ? "Selection" : "String",
+          label: "Tag Number",
+          required: false,
+          ...(dataVariableOptions.length > 0
+            ? { options: dataVariableOptions }
+            : { placeholder: "Enter tag number" }),
+        });
         break;
     }
 
