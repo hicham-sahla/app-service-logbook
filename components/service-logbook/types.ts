@@ -4,6 +4,13 @@ export interface ServiceLogbookCategory {
   translate?: boolean;
   color?: string;
 }
+
+export interface StackReplacement {
+  stack_identifier: string;
+  removed_serial_number?: string;
+  added_serial_number?: string;
+}
+
 export interface Note {
   _id: string;
   /**
@@ -45,8 +52,7 @@ export interface Note {
   // Software changes
 
   // Stack replacements
-  removed_stack_serial_numbers: string | null;
-  added_stack_serial_numbers: string | null;
+  stack_replacements?: StackReplacement[];
 }
 
 export interface NoteWithHtml extends Note {

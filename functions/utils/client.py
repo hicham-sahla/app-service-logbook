@@ -96,8 +96,7 @@ class NotesClient:
             fcps_worked_on=add.fcps_worked_on,
             owls_worked_on=add.owls_worked_on,
             tag_number=add.tag_number,
-            removed_stack_serial_numbers=add.removed_stack_serial_numbers,
-            added_stack_serial_numbers=add.added_stack_serial_numbers,
+            stack_replacements=add.stack_replacements,
         )
 
         result = self.document_client.update_one(
@@ -162,11 +161,17 @@ class NotesClient:
             "fcps_worked_on",
             "owls_worked_on",
             "tag_number",
-            "removed_stack_serial_numbers",
-            "added_stack_serial_numbers",
+            "stack_replacements",
         ]:
             if field in edit.model_fields_set:
-                update_fields[f"notes.$.{field}"] = getattr(edit, field)
+                value = getattr(edit, field)
+                if field == "stack_replacements" and value is not None:
+                    # Pydantic models in a list need to be dumped to dicts
+                    update_fields[f"notes.$.{field}"] = [
+                        item.model_dump() for item in value
+                    ]
+                else:
+                    update_fields[f"notes.$.{field}"] = value
 
         result = self.document_client.update_many(
             {**self.in_id_filtermap, "notes._id": ObjectId(edit.note_id)},

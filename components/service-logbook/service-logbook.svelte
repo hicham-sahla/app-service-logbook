@@ -13,7 +13,12 @@
     ResourceData,
     SingleSelectPanelOptions,
   } from "@ixon-cdk/types";
-  import type { Note, NoteWithHtml, ServiceLogbookCategory } from "./types";
+  import type {
+    Note,
+    NoteWithHtml,
+    ServiceLogbookCategory,
+    StackReplacement,
+  } from "./types";
   import { NotesService } from "./notes.service";
   import { deburr, kebabCase } from "lodash-es";
   import { DateTime, type DateTimeFormatOptions } from "luxon";
@@ -158,6 +163,7 @@
         "SEARCH",
         "SERVICE_LOGBOOK",
         "SUBJECT",
+        "UNCATEGORIZED", // Add this line
         "UNKNOWN_USER",
         "WHEN",
         "WHO",
@@ -260,9 +266,15 @@
       });
     });
     resizeObserver.observe(rootEl);
-
+    const unsubscribe = filteredNotesWithHtml.subscribe((notes) => {
+      if (notes && notes.length > 0) {
+        console.log("--- Currently Displayed Notes ---");
+        console.table(notes);
+      }
+    });
     return () => {
       resizeObserver.unobserve(rootEl);
+      unsubscribe();
     };
   });
 
@@ -407,16 +419,46 @@
         });
 
         if (noteResult && noteResult.value) {
+          const { value } = noteResult;
+          const noteData: Partial<Note> = { note_category: category };
+
           if (category === "Daily report" && date) {
-            notesService.add({
-              note_category: category,
-              ...noteResult.value,
-              week_number: date.weekNumber,
-              performed_on: date.toMillis(),
-            });
-          } else {
-            notesService.add({ note_category: category, ...noteResult.value });
+            noteData.week_number = date.weekNumber;
+            noteData.performed_on = date.toMillis();
           }
+
+          if (category === "Stack replacements") {
+            const stack_replacements: StackReplacement[] = [];
+            const stackIdentifiers = ["a", "b", "c", "d", "e"];
+            for (const identifier of stackIdentifiers) {
+              const group = value[`stack_group_${identifier}`] || {};
+              const removed_serial_number =
+                group[`removed_serial_number_${identifier}`];
+              const added_serial_number =
+                group[`added_serial_number_${identifier}`];
+
+              if (removed_serial_number || added_serial_number) {
+                stack_replacements.push({
+                  stack_identifier: identifier,
+                  removed_serial_number,
+                  added_serial_number,
+                });
+              }
+            }
+            if (stack_replacements.length === 0) {
+              context.openAlertDialog({
+                title: "Validation Error",
+                message: "At least one stack replacement must be filled in.",
+              });
+              return;
+            }
+            noteData.stack_replacements = stack_replacements;
+          }
+
+          // Merge the rest of the form values
+          Object.assign(noteData, value);
+
+          notesService.add(noteData);
           step = "exit";
         } else {
           step = category === "Daily report" ? "date" : "category"; // Go back
@@ -726,29 +768,78 @@
     const performed_on_date = note.performed_on
       ? DateTime.fromMillis(note.performed_on)
       : null;
+
+    const initialValue: any = {
+      ...note,
+      performed_on: performed_on_date
+        ? performed_on_date.toISODate()
+        : undefined,
+      week_number_display: performed_on_date
+        ? `Week ${performed_on_date.weekNumber} - ${performed_on_date.weekdayLong}`
+        : undefined,
+    };
+
+    if (
+      note.note_category === "Stack replacements" &&
+      note.stack_replacements
+    ) {
+      for (const replacement of note.stack_replacements) {
+        const identifier = replacement.stack_identifier;
+        initialValue[`stack_group_${identifier}`] = {
+          [`removed_serial_number_${identifier}`]:
+            replacement.removed_serial_number,
+          [`added_serial_number_${identifier}`]:
+            replacement.added_serial_number,
+        };
+      }
+    }
+
     const result = await context.openFormDialog({
       title: `${translations.EDIT} ${note.note_category}`,
       inputs: _getNoteInputs(note.note_category || "Other", true),
-      initialValue: {
-        ...note,
-        performed_on: performed_on_date
-          ? performed_on_date.toISODate()
-          : undefined,
-        week_number_display: performed_on_date
-          ? `Week ${performed_on_date.weekNumber} - ${performed_on_date.weekdayLong}`
-          : undefined,
-      },
+      initialValue,
       submitButtonText: translations.CONFIRM,
       discardChangesPrompt: true,
     });
+
     if (result && result.value) {
       const { performed_on, ...rest } = result.value;
-      const updatedNote = { ...rest };
+      const updatedNote: Partial<Note> = { ...rest };
+
       if (performed_on) {
         const date = DateTime.fromISO(performed_on);
         updatedNote.performed_on = date.toMillis();
         updatedNote.week_number = date.weekNumber;
       }
+
+      if (note.note_category === "Stack replacements") {
+        const stack_replacements: StackReplacement[] = [];
+        const stackIdentifiers = ["a", "b", "c", "d", "e"];
+        for (const identifier of stackIdentifiers) {
+          const group = result.value[`stack_group_${identifier}`] || {};
+          const removed_serial_number =
+            group[`removed_serial_number_${identifier}`];
+          const added_serial_number =
+            group[`added_serial_number_${identifier}`];
+
+          if (removed_serial_number || added_serial_number) {
+            stack_replacements.push({
+              stack_identifier: identifier,
+              removed_serial_number,
+              added_serial_number,
+            });
+          }
+        }
+        if (stack_replacements.length === 0) {
+          context.openAlertDialog({
+            title: "Validation Error",
+            message: "At least one stack replacement must be filled in.",
+          });
+          return;
+        }
+        updatedNote.stack_replacements = stack_replacements;
+      }
+
       await notesService.edit(note._id, updatedNote);
     }
   }
@@ -914,12 +1005,11 @@
     const inputs: ComponentInput[] = [];
     switch (category) {
       case "Daily report":
-        // Create user options from the usersDict
         const userOptions = usersDict
           ? Object.values(usersDict)
-              .filter((user) => user.name) // Filter out users without names
+              .filter((user) => user.name)
               .map((user) => ({
-                value: user.name!, // Non-null assertion since we filtered above
+                value: user.name!,
                 label: user.name!,
                 shortLabel: user.name!,
               }))
@@ -938,6 +1028,7 @@
             label: "Performed on",
             required: true,
             disabled: true,
+            description: "**Required**",
           },
           {
             key: "week_number_display",
@@ -969,63 +1060,116 @@
             type: "String",
             label: "OWLs Worked On",
             required: false,
+          },
+          {
+            key: "text",
+            type: "RichText" as const,
+            label: "Description of event",
+            placeholder: "Description of event",
+            required: true,
+            translate: false,
+            description: "**Required**",
           }
         );
         break;
       case "Calibrations":
-        inputs.push({
-          key: "tag_number",
-          type: dataVariableOptions.length > 0 ? "Selection" : "String",
-          label: "Tag Number",
-          required: false,
-          ...(dataVariableOptions.length > 0
-            ? { options: dataVariableOptions }
-            : { placeholder: "Enter tag number" }),
-        });
-        break;
-      case "Stack replacements":
         inputs.push(
           {
-            key: "performed_on",
-            type: "Date",
-            label: "Performed on",
+            key: "tag_number",
+            type: dataVariableOptions.length > 0 ? "Selection" : "String",
+            label: "Tag Number",
+            required: false,
+            ...(dataVariableOptions.length > 0
+              ? { options: dataVariableOptions }
+              : { placeholder: "Enter tag number" }),
+          },
+          {
+            key: "text",
+            type: "RichText" as const,
+            label: "Description of event",
+            placeholder: "Description of event",
             required: true,
-          },
-          {
-            key: "removed_stack_serial_numbers",
-            type: "String",
-            label: "Removed Stack Serial Numbers",
-            required: false,
-          },
-          {
-            key: "added_stack_serial_numbers",
-            type: "String",
-            label: "Added Stack Serial Numbers",
-            required: false,
+            translate: false,
+            description: "**Required**",
           }
         );
         break;
-      case "Settings changes":
+      case "Stack replacements":
         inputs.push({
-          key: "tag_number",
-          type: dataVariableOptions.length > 0 ? "Selection" : "String",
-          label: "Tag Number",
-          required: false,
-          ...(dataVariableOptions.length > 0
-            ? { options: dataVariableOptions }
-            : { placeholder: "Enter tag number" }),
+          key: "performed_on",
+          type: "Date",
+          label: "Performed on",
+          required: true,
+          description: "**Required**\n---", // UNDERLINE 1
+        });
+        const stackIdentifiers = ["a", "b", "c", "d", "e"];
+        for (const identifier of stackIdentifiers) {
+          inputs.push(
+            {
+              key: `stack_identifier_${identifier}`,
+              type: "String",
+              label: `Stack Location ${identifier.toUpperCase()}`,
+              defaultValue: `Stack ${identifier.toUpperCase()}`,
+              disabled: true,
+            },
+            {
+              key: `removed_serial_number_${identifier}`,
+              type: "String",
+              label: "Removed Serial Number",
+              required: false,
+            },
+            {
+              key: `added_serial_number_${identifier}`,
+              type: "String",
+              label: "Added Serial Number",
+              required: false,
+            }
+          );
+        }
+        inputs.push({
+          key: "text",
+          type: "RichText" as const,
+          label: "Description of event",
+          placeholder: "Description of event",
+          required: true,
+          translate: false,
+          description: "---\n**Required**", // UNDERLINE 2
+        });
+        break;
+      case "Settings changes":
+        inputs.push(
+          {
+            key: "tag_number",
+            type: dataVariableOptions.length > 0 ? "Selection" : "String",
+            label: "Tag Number",
+            required: false,
+            ...(dataVariableOptions.length > 0
+              ? { options: dataVariableOptions }
+              : { placeholder: "Enter tag number" }),
+          },
+          {
+            key: "text",
+            type: "RichText" as const,
+            label: "Description of event",
+            placeholder: "Description of event",
+            required: true,
+            translate: false,
+            description: "**Required**",
+          }
+        );
+        break;
+      default:
+        inputs.push({
+          key: "text",
+          type: "RichText" as const,
+          label: "Description of event",
+          placeholder: "Description of event",
+          required: true,
+          translate: false,
+          description: "**Required**",
         });
         break;
     }
-
-    inputs.push({
-      key: "text",
-      type: "RichText" as const,
-      label: "Description of event",
-      placeholder: "Description of event",
-      required: true,
-      translate: false,
-    });
     return inputs;
   }
 
@@ -1070,6 +1214,17 @@
       return `<span>${mapNoteToWhenDateTime(note)}</span>${categoryLabel}`;
     }
     return `<span>${mapNoteToWhenDateTime(note)}</span>`;
+  }
+
+  function getNoteCategoryName(note: Note): string {
+    if (note.note_category) {
+      return note.note_category;
+    }
+    const category = getCategory(note.category);
+    if (category) {
+      return category.name;
+    }
+    return translations.UNCATEGORIZED || "Uncategorized";
   }
 </script>
 
@@ -1274,7 +1429,12 @@
                         >{getCategory(note.category)?.name ?? ""}
                       </span>
                     {/if}
-
+                    <span
+                      use:createTooltipOnEllipsis
+                      class="category"
+                      style={getCategoryStyle(getCategory(note.category))}
+                      >{getNoteCategoryName(note)}
+                    </span>
                     <span class="text">
                       {#if note.subject}
                         <strong>{note.subject}</strong>

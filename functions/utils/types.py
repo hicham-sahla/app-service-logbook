@@ -1,5 +1,5 @@
 import time
-from typing import Annotated, Generic, TypeVar
+from typing import Annotated, Generic, TypeVar, List
 
 from bson.objectid import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
@@ -9,6 +9,12 @@ T = TypeVar("T")
 JSONObjectId = Annotated[
     ObjectId, PlainSerializer(lambda x: str(x), return_type=str, when_used="json")
 ]
+
+
+class StackReplacement(BaseModel):
+    stack_identifier: str
+    removed_serial_number: str | None = Field(default=None)
+    added_serial_number: str | None = Field(default=None)
 
 
 class Note(BaseModel):
@@ -45,8 +51,7 @@ class Note(BaseModel):
     # Software changes
 
     # Stack replacements
-    removed_stack_serial_numbers: str | None = Field(default=None)
-    added_stack_serial_numbers: str | None = Field(default=None)
+    stack_replacements: List[StackReplacement] | None = Field(default=None)
 
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
 
@@ -89,8 +94,7 @@ class NoteEdit(BaseModel):
     # Software changes
 
     # Stack replacements
-    removed_stack_serial_numbers: str | None = Field(default=None)
-    added_stack_serial_numbers: str | None = Field(default=None)
+    stack_replacements: List[StackReplacement] | None = Field(default=None)
 
 
 class NoteAdd(BaseModel):
@@ -115,8 +119,7 @@ class NoteAdd(BaseModel):
     # Software changes
 
     # Stack replacements
-    removed_stack_serial_numbers: str | None = Field(default=None)
-    added_stack_serial_numbers: str | None = Field(default=None)
+    stack_replacements: List[StackReplacement] | None = Field(default=None)
 
 
 class NoteRemove(BaseModel):
