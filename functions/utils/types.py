@@ -113,10 +113,11 @@ class NoteAdd(BaseModel):
     fcps_worked_on: str | None = Field(default=None)
     owls_worked_on: str | None = Field(default=None)
 
+    # Settings change
     # Calibrations
     tag_number: str | None = Field(default=None)
 
-    # Software changes
+    # Software changes no additional fields
 
     # Stack replacements
     stack_replacements: List[StackReplacement] | None = Field(default=None)
@@ -124,3 +125,7 @@ class NoteAdd(BaseModel):
 
 class NoteRemove(BaseModel):
     note_id: str
+
+
+class NoteImport(BaseModel):
+    notes: List[Note]

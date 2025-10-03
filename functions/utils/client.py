@@ -1,4 +1,4 @@
-from typing import ParamSpec, TypeVar
+from typing import ParamSpec, TypeVar, List
 import time
 from functools import reduce
 from operator import add
@@ -208,3 +208,13 @@ class NotesClient:
         )
 
         return Note(**note) if note else note
+
+    def import_notes(self, notes: List[Note]) -> None:
+        for note in notes:
+            self.add(NoteAdd(**note.model_dump()))
+
+    def set_notes(self, notes: List[Note]) -> None:
+        self.document_client.update_one(
+            {"agent_or_asset_id": self.agent_or_asset_id},
+            {"$set": {"notes": [note.model_dump(by_alias=True) for note in notes]}},
+        )

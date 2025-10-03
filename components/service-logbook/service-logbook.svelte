@@ -169,6 +169,11 @@
         "WHO",
         "__TEXT__.CONFIRM_NOTE_REMOVAL",
         "__TEXT__.NO_MATCHING_RESULTS",
+        "IMPORT",
+        "EXPORT",
+        "IMPORT_FROM_JSON",
+        "EXPORT_TO_JSON",
+        "__TEXT__.CONFIRM_IMPORT",
       ],
       undefined,
       { source: "global" }
@@ -1226,6 +1231,64 @@
     }
     return translations.UNCATEGORIZED || "Uncategorized";
   }
+  async function handleDownloadJsonButtonClick(): Promise<void> {
+    const result = await notesService.exportData();
+    if (result.data.success) {
+      const data = new Blob([JSON.stringify(result.data.data, null, 2)], {
+        type: "application/json",
+      });
+      const fileName = `${kebabCase(
+        deburr(agentOrAssetName ?? undefined)
+      )}_service-logbook-notes.json`;
+      if ("saveAsFile" in context) {
+        context.saveAsFile(data, fileName);
+      }
+    }
+  }
+
+  async function handleUploadJsonButtonClick(): Promise<void> {
+    const result = await context.openFormDialog({
+      title: translations.IMPORT_FROM_JSON,
+      inputs: [
+        {
+          key: "file",
+          type: "File",
+          label: "JSON File",
+          accept: ".json",
+          required: true,
+        },
+      ],
+      submitButtonText: translations.IMPORT,
+    });
+
+    if (result && result.value && result.value.file) {
+      const file = result.value.file;
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        if (event.target && event.target.result) {
+          try {
+            const notes = JSON.parse(event.target.result as string);
+            const confirmed = await context.openConfirmDialog({
+              title: translations.IMPORT,
+              message: translations["__TEXT__.CONFIRM_IMPORT"],
+              confirmButtonText: translations.IMPORT,
+              destructive: true,
+            });
+            if (confirmed) {
+              await notesService.importData(notes);
+              await notesService.load();
+            }
+          } catch (error) {
+            context.openAlertDialog({
+              title: "Error",
+              message: "Invalid JSON file.",
+            });
+          }
+        }
+      };
+      reader.readAsText(file);
+    }
+  }
 </script>
 
 <div class="card" bind:this={rootEl} class:is-narrow={isNarrow}>
@@ -1341,6 +1404,44 @@
             fill="#000000"
             ><path
               d="M480-320 280-520l56-58 104 104v-326h80v326l104-104 56 58-200 200ZM240-160q-33 0-56.5-23.5T160-240v-120h80v120h480v-120h80v120q0 33-23.5 56.5T720-160H240Z"
+            />
+          </svg>
+        </button>
+        <button
+          use:createTooltip={{ message: translations.EXPORT_TO_JSON }}
+          class="icon-button"
+          class:hidden={searchInputVisible}
+          data-testid="service-logbook-export-json-button"
+          on:click={handleDownloadJsonButtonClick}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            height="24px"
+            viewBox="0 0 24 24"
+            width="24px"
+            fill="#000000"
+          >
+            <path d="M0 0h24v24H0z" fill="none" />
+            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+          </svg>
+        </button>
+        <button
+          use:createTooltip={{ message: translations.IMPORT_FROM_JSON }}
+          class="icon-button"
+          class:hidden={searchInputVisible}
+          data-testid="service-logbook-import-json-button"
+          on:click={handleUploadJsonButtonClick}
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            height="24px"
+            viewBox="0 0 24 24"
+            width="24px"
+            fill="#000000"
+          >
+            <path d="M0 0h24v24H0z" fill="none" />
+            <path
+              d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"
             />
           </svg>
         </button>

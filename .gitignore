@@ -5,3 +5,6 @@ node_modules
 .accesstoken
 coverage.xml
 .coverage
+.env
+context_values.json
+bundle.zip

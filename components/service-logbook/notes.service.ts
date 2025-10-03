@@ -43,4 +43,12 @@ export class NotesService {
     this.notes.update((notes) => notes.filter((note) => note._id !== id));
     return this.client.call("notes.remove", { note_id: id });
   }
+
+  exportData() {
+    return this.client.call("notes.export_data");
+  }
+
+  importData(notes: Note[]) {
+    return this.client.call("notes.import_data", { notes });
+  }
 }

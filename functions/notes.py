@@ -8,6 +8,7 @@ from functions.utils.types import (
     NoteRemove,
     SuccessResponse,
     Note,
+    NoteImport,
 )
 from functions.utils.utils import notes_endpoint, permission_check
 from ixoncdkingress.cbc.context import CbcContext
@@ -79,3 +80,35 @@ def remove(
         return error
 
     return SuccessResponse(message="Removed Note")
+
+
+@CbcContext.expose
+@notes_endpoint()
+def export_data(
+    _: CbcContext,
+    notes_client: NotesClient,
+) -> SuccessResponse[Iterable[Note]]:
+    """
+    Returns all notes for the current agent/asset.
+    """
+    return SuccessResponse(data=notes_client.get())
+
+
+@CbcContext.expose
+@notes_endpoint(NoteImport)
+def import_data(
+    context: CbcContext,
+    notes_client: NotesClient,
+    model: NoteImport,
+) -> ErrorResponse[None] | SuccessResponse[None]:
+    """
+    Imports all notes from a JSON file.
+    """
+    if context.user is None or not permission_check(context, notes_client):
+        return ErrorResponse(
+            message="You do not have the rights to perform this action"
+        )
+
+    notes_client.set_notes(model.notes)
+
+    return SuccessResponse(message="Imported Notes")
