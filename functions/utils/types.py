@@ -36,14 +36,7 @@ class Note(BaseModel):
     category: int | None = Field(default=None)
     note_category: str | None = Field(default=None)
 
-    # Daily report
-    additional_user: str | None = Field(default=None)
     performed_on: int | None = Field(default=None)
-    week_number: int | None = Field(default=None)
-    worked_hours: int | None = Field(default=None)
-    mcps_worked_on: str | None = Field(default=None)
-    fcps_worked_on: str | None = Field(default=None)
-    owls_worked_on: str | None = Field(default=None)
 
     # Calibrations
     tag_number: str | None = Field(default=None)
@@ -79,14 +72,7 @@ class NoteEdit(BaseModel):
     category: int | None = Field(default=None)
     note_category: str | None = Field(default=None)
 
-    # Daily report
-    additional_user: str | None = Field(default=None)
     performed_on: int | None = Field(default=None)
-    week_number: int | None = Field(default=None)
-    worked_hours: int | None = Field(default=None)
-    mcps_worked_on: str | None = Field(default=None)
-    fcps_worked_on: str | None = Field(default=None)
-    owls_worked_on: str | None = Field(default=None)
 
     # Calibrations
     tag_number: str | None = Field(default=None)
@@ -104,14 +90,8 @@ class NoteAdd(BaseModel):
     category: int | None = Field(default=None)
     note_category: str | None = Field(default=None)
 
-    # Daily report
-    additional_user: str | None = Field(default=None)
+    # Date field for moment of action
     performed_on: int | None = Field(default=None)
-    week_number: int | None = Field(default=None)
-    worked_hours: int | None = Field(default=None)
-    mcps_worked_on: str | None = Field(default=None)
-    fcps_worked_on: str | None = Field(default=None)
-    owls_worked_on: str | None = Field(default=None)
 
     # Settings change
     # Calibrations

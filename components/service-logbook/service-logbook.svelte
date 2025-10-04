@@ -344,7 +344,6 @@
 
   async function handleAddButtonClick(): Promise<void> {
     const categories = [
-      "Daily report",
       "Calibrations",
       "Software changes",
       "Settings changes",
@@ -376,33 +375,9 @@
 
         if (categoryResult && categoryResult.value) {
           category = categoryResult.value.category;
-          step = category === "Daily report" ? "date" : "note";
-        } else {
-          step = "exit";
-        }
-      } else if (step === "date") {
-        const dateResult = await context.openFormDialog({
-          title: "Select Date",
-          inputs: [
-            {
-              key: "performed_on",
-              type: "Date",
-              label: "Performed on",
-              required: true,
-            },
-          ],
-          submitButtonText: "Next",
-          cancelButtonText: "Previous",
-        });
-
-        if (dateResult && dateResult.value) {
-          performed_on = dateResult.value.performed_on;
-          if (performed_on) {
-            date = DateTime.fromISO(performed_on);
-          }
           step = "note";
         } else {
-          step = "category"; // Go back to category selection
+          step = "exit";
         }
       } else if (step === "note") {
         if (!category) {
@@ -412,12 +387,6 @@
         const noteResult = await context.openFormDialog({
           title: `${translations.ADD} ${category}`,
           inputs: _getNoteInputs(category),
-          initialValue: {
-            performed_on,
-            week_number_display: date
-              ? `Week ${date.weekNumber} - ${date.weekdayLong}`
-              : undefined,
-          },
           submitButtonText: translations.ADD,
           cancelButtonText: "Previous",
           discardChangesPrompt: true,
@@ -427,9 +396,12 @@
           const { value } = noteResult;
           const noteData: Partial<Note> = { note_category: category };
 
-          if (category === "Daily report" && date) {
-            noteData.week_number = date.weekNumber;
-            noteData.performed_on = date.toMillis();
+          // Add this block to handle the date for Stack Replacements
+          if (category === "Stack replacements" && value.performed_on) {
+            const performedOnDate = DateTime.fromISO(value.performed_on);
+            if (performedOnDate.isValid) {
+              noteData.performed_on = performedOnDate.toMillis();
+            }
           }
 
           if (category === "Stack replacements") {
@@ -441,7 +413,6 @@
                 group[`removed_serial_number_${identifier}`];
               const added_serial_number =
                 group[`added_serial_number_${identifier}`];
-
               if (removed_serial_number || added_serial_number) {
                 stack_replacements.push({
                   stack_identifier: identifier,
@@ -450,23 +421,16 @@
                 });
               }
             }
-            if (stack_replacements.length === 0) {
-              context.openAlertDialog({
-                title: "Validation Error",
-                message: "At least one stack replacement must be filled in.",
-              });
-              return;
-            }
             noteData.stack_replacements = stack_replacements;
           }
 
           // Merge the rest of the form values
-          Object.assign(noteData, value);
-
+          const { performed_on, ...restOfValue } = value;
+          Object.assign(noteData, restOfValue);
           notesService.add(noteData);
           step = "exit";
         } else {
-          step = category === "Daily report" ? "date" : "category"; // Go back
+          step = "category";
         }
       }
     }
@@ -493,38 +457,12 @@
 
     if (filterResult && filterResult.value) {
       const { category } = filterResult.value;
-      let weekNumberResult;
-
-      if (category === "Daily report") {
-        weekNumberResult = await context.openFormDialog({
-          title: "Export Options",
-          inputs: [
-            {
-              key: "week_number",
-              type: "Number",
-              label: "Filter by Week Number",
-            },
-          ],
-          submitButtonText: "Export",
-        });
-      }
 
       let filteredNotes = notes;
 
       if (category && category !== "all") {
         filteredNotes = filteredNotes.filter(
           (note) => note.note_category === category
-        );
-      }
-
-      if (
-        category === "Daily report" &&
-        weekNumberResult &&
-        weekNumberResult.value
-      ) {
-        const { week_number } = weekNumberResult.value;
-        filteredNotes = filteredNotes.filter(
-          (note) => note.week_number === week_number
         );
       }
 
@@ -779,9 +717,6 @@
       performed_on: performed_on_date
         ? performed_on_date.toISODate()
         : undefined,
-      week_number_display: performed_on_date
-        ? `Week ${performed_on_date.weekNumber} - ${performed_on_date.weekdayLong}`
-        : undefined,
     };
 
     if (
@@ -814,7 +749,6 @@
       if (performed_on) {
         const date = DateTime.fromISO(performed_on);
         updatedNote.performed_on = date.toMillis();
-        updatedNote.week_number = date.weekNumber;
       }
 
       if (note.note_category === "Stack replacements") {
@@ -1009,74 +943,6 @@
   function _getNoteInputs(category: string, isEdit = false): ComponentInput[] {
     const inputs: ComponentInput[] = [];
     switch (category) {
-      case "Daily report":
-        const userOptions = usersDict
-          ? Object.values(usersDict)
-              .filter((user) => user.name)
-              .map((user) => ({
-                value: user.name!,
-                label: user.name!,
-                shortLabel: user.name!,
-              }))
-          : [];
-        inputs.push(
-          {
-            key: "additional_user",
-            type: "Selection",
-            label: "Additional User",
-            required: false,
-            options: userOptions,
-          },
-          {
-            key: "performed_on",
-            type: "Date",
-            label: "Performed on",
-            required: true,
-            disabled: true,
-            description: "**Required**",
-          },
-          {
-            key: "week_number_display",
-            type: "String",
-            label: "Week Number",
-            disabled: true,
-            required: false,
-          },
-          {
-            key: "worked_hours",
-            type: "Number",
-            label: "Worked Hours",
-            required: false,
-          },
-          {
-            key: "mcps_worked_on",
-            type: "String",
-            label: "MCPs Worked On",
-            required: false,
-          },
-          {
-            key: "fcps_worked_on",
-            type: "String",
-            label: "FCPs Worked On",
-            required: false,
-          },
-          {
-            key: "owls_worked_on",
-            type: "String",
-            label: "OWLs Worked On",
-            required: false,
-          },
-          {
-            key: "text",
-            type: "RichText" as const,
-            label: "Description of event",
-            placeholder: "Description of event",
-            required: true,
-            translate: false,
-            description: "**Required**",
-          }
-        );
-        break;
       case "Calibrations":
         inputs.push(
           {

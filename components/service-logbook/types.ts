@@ -37,14 +37,8 @@ export interface Note {
   /** unix epoch in milliseconds */
   updated_on: number | null;
 
-  // Daily report
-  additional_user: string | null;
+  // Date field for moment of action
   performed_on: number | null;
-  week_number: number | null;
-  worked_hours: number | null;
-  mcps_worked_on: string | null;
-  fcps_worked_on: string | null;
-  owls_worked_on: string | null;
 
   // Calibrations
   tag_number: string | null;
