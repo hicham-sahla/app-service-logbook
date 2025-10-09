@@ -1,6 +1,5 @@
 import time
-from typing import Annotated, Generic, TypeVar, List
-
+from typing import Annotated, Generic, TypeVar
 from bson.objectid import ObjectId
 from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
@@ -11,18 +10,13 @@ JSONObjectId = Annotated[
 ]
 
 
-class StackReplacement(BaseModel):
-    stack_identifier: str
-    removed_serial_number: str | None = Field(default=None)
-    added_serial_number: str | None = Field(default=None)
-
-
 class Note(BaseModel):
     id: JSONObjectId = Field(
         default_factory=ObjectId, alias="_id", serialization_alias="_id"
     )
     user: str | None = Field(default=None, deprecated=True)
     text: str
+    external_note: bool | None = Field(default=None)
     created_on: int = Field(default_factory=lambda: round(time.time() * 1000))
 
     author_id: str | None = Field(default=None)
@@ -44,8 +38,7 @@ class Note(BaseModel):
     # Software changes
 
     # Stack replacements
-    stack_replacements: List[StackReplacement] | None = Field(default=None)
-
+    stack_replacements: str | None = Field(default=None)
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
 
 
@@ -67,7 +60,7 @@ class ErrorResponse(Response[T]):
 class NoteEdit(BaseModel):
     note_id: str
     text: str
-
+    external_note: bool | None = Field(default=None)
     subject: str | None = Field(default=None)
     category: int | None = Field(default=None)
     note_category: str | None = Field(default=None)
@@ -80,12 +73,12 @@ class NoteEdit(BaseModel):
     # Software changes
 
     # Stack replacements
-    stack_replacements: List[StackReplacement] | None = Field(default=None)
+    stack_replacements: str | None = Field(default=None)
 
 
 class NoteAdd(BaseModel):
     text: str
-
+    external_note: bool | None = Field(default=None)
     subject: str | None = Field(default=None)
     category: int | None = Field(default=None)
     note_category: str | None = Field(default=None)
@@ -100,7 +93,7 @@ class NoteAdd(BaseModel):
     # Software changes no additional fields
 
     # Stack replacements
-    stack_replacements: List[StackReplacement] | None = Field(default=None)
+    stack_replacements: str | None = Field(default=None)
 
 
 class NoteRemove(BaseModel):

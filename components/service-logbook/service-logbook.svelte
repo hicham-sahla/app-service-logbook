@@ -13,12 +13,7 @@
     ResourceData,
     SingleSelectPanelOptions,
   } from "@ixon-cdk/types";
-  import type {
-    Note,
-    NoteWithHtml,
-    ServiceLogbookCategory,
-    StackReplacement,
-  } from "./types";
+  import type { Note, NoteWithHtml, ServiceLogbookCategory } from "./types";
   import { NotesService } from "./notes.service";
   import { deburr, kebabCase } from "lodash-es";
   import { DateTime, type DateTimeFormatOptions } from "luxon";
@@ -394,7 +389,10 @@
 
         if (noteResult && noteResult.value) {
           const { value } = noteResult;
-          const noteData: Partial<Note> = { note_category: category };
+          const noteData: Partial<Note> = {
+            note_category: category,
+            external_note: value.external_note ?? false,
+          };
 
           // Add this block to handle the date for Stack Replacements
           if (category === "Stack replacements" && value.performed_on) {
@@ -405,23 +403,31 @@
           }
 
           if (category === "Stack replacements") {
-            const stack_replacements: StackReplacement[] = [];
+            const stackReplacements: string[] = [];
             const stackIdentifiers = ["a", "b", "c", "d", "e"];
+
             for (const identifier of stackIdentifiers) {
-              const group = value[`stack_group_${identifier}`] || {};
+              // FIX: Access fields directly from value, not from a group
               const removed_serial_number =
-                group[`removed_serial_number_${identifier}`];
+                value[`removed_serial_number_${identifier}`] || "";
               const added_serial_number =
-                group[`added_serial_number_${identifier}`];
+                value[`added_serial_number_${identifier}`] || "";
+              const stack_failed = value[`stack_failed_${identifier}`]
+                ? "true"
+                : "false";
+
               if (removed_serial_number || added_serial_number) {
-                stack_replacements.push({
-                  stack_identifier: identifier,
-                  removed_serial_number,
-                  added_serial_number,
-                });
+                // Format: ('stack_identifier','removed_serial_number','added_serial_number','stack_failed')
+                stackReplacements.push(
+                  `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_failed}')`
+                );
               }
             }
-            noteData.stack_replacements = stack_replacements;
+
+            // Join with semicolons and add trailing semicolon
+            if (stackReplacements.length > 0) {
+              noteData.stack_replacements = stackReplacements.join(";") + ";";
+            }
           }
 
           // Merge the rest of the form values
@@ -723,14 +729,34 @@
       note.note_category === "Stack replacements" &&
       note.stack_replacements
     ) {
-      for (const replacement of note.stack_replacements) {
-        const identifier = replacement.stack_identifier;
-        initialValue[`stack_group_${identifier}`] = {
-          [`removed_serial_number_${identifier}`]:
-            replacement.removed_serial_number,
-          [`added_serial_number_${identifier}`]:
-            replacement.added_serial_number,
-        };
+      // Parse the string format back to individual fields
+      const replacements = note.stack_replacements
+        .split(";")
+        .filter((r) => r.trim())
+        .map((r) => {
+          // Remove parentheses and split by comma
+          const match = r.match(/\('([^']+)','([^']*)','([^']*)','([^']+)'\)/);
+          if (match) {
+            return {
+              stack_identifier: match[1],
+              removed_serial_number: match[2],
+              added_serial_number: match[3],
+              stack_failed: match[4] === "true",
+            };
+          }
+          return null;
+        })
+        .filter((r) => r !== null);
+
+      for (const replacement of replacements) {
+        if (replacement) {
+          const identifier = replacement.stack_identifier;
+          initialValue[`removed_serial_number_${identifier}`] =
+            replacement.removed_serial_number;
+          initialValue[`added_serial_number_${identifier}`] =
+            replacement.added_serial_number;
+          initialValue[`stack_failed_${identifier}`] = replacement.stack_failed;
+        }
       }
     }
 
@@ -752,31 +778,35 @@
       }
 
       if (note.note_category === "Stack replacements") {
-        const stack_replacements: StackReplacement[] = [];
+        const stackReplacements: string[] = [];
         const stackIdentifiers = ["a", "b", "c", "d", "e"];
+
         for (const identifier of stackIdentifiers) {
-          const group = result.value[`stack_group_${identifier}`] || {};
+          // FIX: Access fields directly from result.value, not from a group
           const removed_serial_number =
-            group[`removed_serial_number_${identifier}`];
+            result.value[`removed_serial_number_${identifier}`] || "";
           const added_serial_number =
-            group[`added_serial_number_${identifier}`];
+            result.value[`added_serial_number_${identifier}`] || "";
+          const stack_failed = result.value[`stack_failed_${identifier}`]
+            ? "true"
+            : "false";
 
           if (removed_serial_number || added_serial_number) {
-            stack_replacements.push({
-              stack_identifier: identifier,
-              removed_serial_number,
-              added_serial_number,
-            });
+            stackReplacements.push(
+              `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_failed}')`
+            );
           }
         }
-        if (stack_replacements.length === 0) {
+
+        if (stackReplacements.length === 0) {
           context.openAlertDialog({
             title: "Validation Error",
             message: "At least one stack replacement must be filled in.",
           });
           return;
         }
-        updatedNote.stack_replacements = stack_replacements;
+
+        updatedNote.stack_replacements = stackReplacements.join(";") + ";";
       }
 
       await notesService.edit(note._id, updatedNote);
@@ -942,36 +972,28 @@
 
   function _getNoteInputs(category: string, isEdit = false): ComponentInput[] {
     const inputs: ComponentInput[] = [];
+
+    // Add category-specific fields
     switch (category) {
       case "Calibrations":
-        inputs.push(
-          {
-            key: "tag_number",
-            type: dataVariableOptions.length > 0 ? "Selection" : "String",
-            label: "Tag Number",
-            required: false,
-            ...(dataVariableOptions.length > 0
-              ? { options: dataVariableOptions }
-              : { placeholder: "Enter tag number" }),
-          },
-          {
-            key: "text",
-            type: "RichText" as const,
-            label: "Description of event",
-            placeholder: "Description of event",
-            required: true,
-            translate: false,
-            description: "**Required**",
-          }
-        );
+        inputs.push({
+          key: "tag_number",
+          type: dataVariableOptions.length > 0 ? "Selection" : "String",
+          label: "Tag Number",
+          required: false,
+          ...(dataVariableOptions.length > 0
+            ? { options: dataVariableOptions }
+            : { placeholder: "Enter tag number" }),
+        });
         break;
+
       case "Stack replacements":
         inputs.push({
           key: "performed_on",
           type: "Date",
           label: "Performed on",
           required: true,
-          description: "**Required**\n---", // UNDERLINE 1
+          description: "**Required**\n---",
         });
         const stackIdentifiers = ["a", "b", "c", "d", "e"];
         for (const identifier of stackIdentifiers) {
@@ -994,53 +1016,60 @@
               type: "String",
               label: "Added Serial Number",
               required: false,
+            },
+            {
+              key: `stack_failed_${identifier}`,
+              type: "Checkbox" as const,
+              label: "Stack Failed",
+              defaultValue: false,
             }
           );
         }
-        inputs.push({
-          key: "text",
-          type: "RichText" as const,
-          label: "Description of event",
-          placeholder: "Description of event",
-          required: true,
-          translate: false,
-          description: "---\n**Required**", // UNDERLINE 2
-        });
         break;
+
       case "Settings changes":
-        inputs.push(
-          {
-            key: "tag_number",
-            type: dataVariableOptions.length > 0 ? "Selection" : "String",
-            label: "Tag Number",
-            required: false,
-            ...(dataVariableOptions.length > 0
-              ? { options: dataVariableOptions }
-              : { placeholder: "Enter tag number" }),
-          },
-          {
-            key: "text",
-            type: "RichText" as const,
-            label: "Description of event",
-            placeholder: "Description of event",
-            required: true,
-            translate: false,
-            description: "**Required**",
-          }
-        );
-        break;
-      default:
         inputs.push({
-          key: "text",
-          type: "RichText" as const,
-          label: "Description of event",
-          placeholder: "Description of event",
-          required: true,
-          translate: false,
-          description: "**Required**",
+          key: "tag_number",
+          type: dataVariableOptions.length > 0 ? "Selection" : "String",
+          label: "Tag Number",
+          required: false,
+          ...(dataVariableOptions.length > 0
+            ? { options: dataVariableOptions }
+            : { placeholder: "Enter tag number" }),
         });
+        break;
+
+      case "Software changes":
+        // No unique fields for software changes
+        break;
+
+      default:
+        // No unique fields for other categories
         break;
     }
+
+    // Add common fields for ALL categories
+    inputs.push(
+      {
+        key: "text",
+        type: "RichText" as const,
+        label: "Description of event",
+        placeholder: "Description of event",
+        required: true,
+        translate: false,
+        description:
+          category === "Stack replacements"
+            ? "---\n**Required**"
+            : "**Required**",
+      },
+      {
+        key: "external_note",
+        type: "Checkbox" as const,
+        label: "External Note",
+        defaultValue: false,
+      }
+    );
+
     return inputs;
   }
 

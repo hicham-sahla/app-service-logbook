@@ -83,6 +83,7 @@ class NotesClient:
     def add(self, add: NoteAdd) -> Note | ErrorResponse[None]:
         note = Note(
             text=add.text,
+            external_note=add.external_note,
             subject=add.subject,
             category=add.category,
             note_category=add.note_category,
@@ -149,17 +150,13 @@ class NotesClient:
             "note_category",
             "performed_on",
             "tag_number",
+            "external_note",
             "stack_replacements",
         ]:
             if field in edit.model_fields_set:
                 value = getattr(edit, field)
-                if field == "stack_replacements" and value is not None:
-                    # Pydantic models in a list need to be dumped to dicts
-                    update_fields[f"notes.$.{field}"] = [
-                        item.model_dump() for item in value
-                    ]
-                else:
-                    update_fields[f"notes.$.{field}"] = value
+                # Remove the special handling for stack_replacements since it's now a string
+                update_fields[f"notes.$.{field}"] = value
 
         result = self.document_client.update_many(
             {**self.in_id_filtermap, "notes._id": ObjectId(edit.note_id)},

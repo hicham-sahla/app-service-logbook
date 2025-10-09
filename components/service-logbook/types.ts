@@ -5,12 +5,6 @@ export interface ServiceLogbookCategory {
   color?: string;
 }
 
-export interface StackReplacement {
-  stack_identifier: string;
-  removed_serial_number?: string;
-  added_serial_number?: string;
-}
-
 export interface Note {
   _id: string;
   /**
@@ -46,7 +40,9 @@ export interface Note {
   // Software changes
 
   // Stack replacements
-  stack_replacements?: StackReplacement[];
+
+  stack_replacements?: string | null;
+  external_note: boolean | null;
 }
 
 export interface NoteWithHtml extends Note {
