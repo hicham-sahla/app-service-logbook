@@ -78,6 +78,24 @@
     const category = getCategory($filter.selectedCategoryId);
     return category ? category.name : translations.CATEGORY;
   });
+
+  function getStackCount(): number {
+    if (!agentOrAssetName) return 5; // Default to 5MW if no agent
+
+    // 1MW units have "EX425D" in their name
+    if (agentOrAssetName.includes("EX425D")) {
+      return 1;
+    }
+
+    // 5MW units have "EX2125D" in their name
+    if (agentOrAssetName.includes("EX2125D")) {
+      return 5;
+    }
+
+    // Default to 5MW if pattern not recognized
+    return 5;
+  }
+
   async function fetchDataVariables(
     agentId: string
   ): Promise<{ value: string; label: string; shortLabel: string }[]> {
@@ -405,10 +423,11 @@
 
           if (category === "Stack replacements") {
             const stackReplacements: string[] = [];
-            const stackIdentifiers = ["a", "b", "c", "d", "e"];
+            const stackCount = getStackCount();
+            const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+            const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
 
             for (const identifier of stackIdentifiers) {
-              // Access fields from the group
               const group = value[`stack_group_${identifier}`] || {};
               const removed_serial_number =
                 group[`removed_serial_number_${identifier}`] || "";
@@ -729,7 +748,6 @@
       note.note_category === "Stack replacements" &&
       note.stack_replacements
     ) {
-      // Parse the string format back to individual fields
       const replacements = note.stack_replacements
         .split(";")
         .filter((r) => r.trim())
@@ -780,7 +798,9 @@
 
       if (note.note_category === "Stack replacements") {
         const stackReplacements: string[] = [];
-        const stackIdentifiers = ["a", "b", "c", "d", "e"];
+        const stackCount = getStackCount();
+        const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+        const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
 
         for (const identifier of stackIdentifiers) {
           const group = result.value[`stack_group_${identifier}`] || {};
@@ -908,23 +928,170 @@
     const sanitizedHtml = context.sanitizeHtml(note.html, {
       allowStyleAttr: true,
     });
-    return `
-      <div class="card">
-        <div class="card-header">
-          <div class="note-info who">${_getNoteInfoWho(note)}</div>
-          <div class="note-info when-what">${_getNoteInfoWhenWhat(note)}</div>
-          <button class="icon-button more" data-testid="service-logbook-preview-more-button">
-            <svg height="20px" viewBox="0 0 24 24" width="20px">
-              <path d="M0 0h24v24H0V0z" fill="none" />
-              <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
-            </svg>
-          </button>
+
+    // Category section
+    const categoryName = note.note_category || "Uncategorized";
+    const categorySection = `
+    <div style="margin-bottom: 16px; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 8%); border-radius: 4px;">
+      <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Category:</strong> 
+      <span style="font-weight: 500;">${categoryName}</span>
+    </div>
+  `;
+
+    // Build category-specific fields section
+    let categoryFields = "";
+
+    switch (note.note_category) {
+      case "Calibrations":
+        categoryFields = `
+        <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+          <div style="margin-bottom: 8px;">
+            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Tag Number:</strong>
+            <span>${note.tag_number || "-"}</span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Value Before:</strong>
+            <span>${note.tag_value_before || "-"}</span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Value After:</strong>
+            <span>${note.tag_value_after || "-"}</span>
+          </div>
         </div>
-        <div class="card-content">
-          ${subject}
+      `;
+        break;
+
+      case "Settings changes":
+        categoryFields = `
+        <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+          <div style="margin-bottom: 8px;">
+            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Tag Number:</strong>
+            <span>${note.tag_number || "-"}</span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Setting Before:</strong>
+            <span>${note.tag_value_before || "-"}</span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Setting After:</strong>
+            <span>${note.tag_value_after || "-"}</span>
+          </div>
+        </div>
+      `;
+        break;
+
+      case "Software changes":
+      case "Firmware update":
+        categoryFields = `
+        <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+          <div style="margin-bottom: 8px;">
+            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Version:</strong>
+            <span>${note.version || "-"}</span>
+          </div>
+        </div>
+      `;
+        break;
+
+      case "Stack replacements":
+        let stackHtml = "";
+        if (note.performed_on) {
+          const performedDate = DateTime.fromMillis(
+            note.performed_on
+          ).toLocaleString({
+            year: "numeric",
+            month: "long",
+            day: "numeric",
+          });
+          stackHtml += `
+          <div style="margin-bottom: 12px;">
+            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Performed On:</strong>
+            <span>${performedDate}</span>
+          </div>
+        `;
+        }
+
+        if (note.stack_replacements) {
+          const replacements = note.stack_replacements
+            .split(";")
+            .filter((r) => r.trim())
+            .map((r) => {
+              const match = r.match(
+                /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+              );
+              if (match) {
+                return {
+                  identifier: match[1],
+                  removed: match[2],
+                  added: match[3],
+                  failed: match[4] === "true",
+                };
+              }
+              return null;
+            })
+            .filter((r) => r !== null);
+
+          if (replacements.length > 0) {
+            stackHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Replacements:</strong></div>`;
+
+            replacements.forEach((stack) => {
+              const failedBadge = stack.failed
+                ? `<span style="display: inline-block; padding: 2px 6px; margin-left: 8px; background-color: #ff4444; color: white; border-radius: 3px; font-size: 10px; font-weight: 500;">FAILED</span>`
+                : "";
+
+              stackHtml += `
+              <div style="margin: 8px 0; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 4%); border-radius: 4px;">
+                <div style="font-weight: 500; margin-bottom: 4px;">
+                  Stack ${stack.identifier.toUpperCase()}${failedBadge}
+                </div>
+                <div style="font-size: 11px; color: color-mix(in srgb, transparent, currentcolor 30%);">
+                  <div>Removed: ${stack.removed || "-"}</div>
+                  <div>Added: ${stack.added || "-"}</div>
+                </div>
+              </div>
+            `;
+            });
+          }
+        }
+
+        categoryFields = `
+        <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+          ${stackHtml}
+        </div>
+      `;
+        break;
+    }
+
+    // External note badge
+    const externalNoteBadge = note.external_note
+      ? `<div style="margin-bottom: 16px;">
+         <span style="display: inline-block; padding: 4px 8px; background-color: #2196F3; color: white; border-radius: 4px; font-size: 11px; font-weight: 500;">
+           📋 EXTERNAL NOTE
+         </span>
+       </div>`
+      : "";
+
+    return `
+    <div class="card">
+      <div class="card-header">
+        <div class="note-info who">${_getNoteInfoWho(note)}</div>
+        <div class="note-info when-what">${_getNoteInfoWhenWhat(note)}</div>
+        <button class="icon-button more" data-testid="service-logbook-preview-more-button">
+          <svg height="20px" viewBox="0 0 24 24" width="20px">
+            <path d="M0 0h24v24H0V0z" fill="none" />
+            <path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="card-content">
+        ${subject}
+        ${externalNoteBadge}
+        ${categorySection}
+        ${categoryFields}
+        <div style="margin-top: 16px;">
           ${sanitizedHtml}
         </div>
-      </div>`;
+      </div>
+    </div>`;
   }
 
   async function handleOpenCategorySelect(event: MouseEvent): Promise<void> {
@@ -959,6 +1126,7 @@
     const noteInfoWho = root.querySelector(".note-info.who");
     const noteInfoWhenWhat = root.querySelector(".note-info.when-what");
     const cardContent = root.querySelector(".card-content");
+
     if (noteInfoWho) {
       noteInfoWho.innerHTML = _getNoteInfoWho(note);
     }
@@ -966,8 +1134,20 @@
       noteInfoWhenWhat.innerHTML = _getNoteInfoWhenWhat(note);
     }
     if (cardContent) {
-      cardContent.innerHTML =
+      // Reconstruct the entire content with all fields
+      const subject = note.subject ? `<h2>${note.subject}</h2>` : "";
+      const sanitizedHtml =
         context.sanitizeHtml(note.html, { allowStyleAttr: true }) ?? "";
+
+      // Reuse the logic from getNoteHtmlContent for consistency
+      // Extract just the content part (everything inside card-content)
+      const fullHtml = getNoteHtmlContent(note);
+      const contentMatch = fullHtml.match(
+        /<div class="card-content">([\s\S]*)<\/div>\s*<\/div>$/
+      );
+      if (contentMatch) {
+        cardContent.innerHTML = contentMatch[1];
+      }
     }
   }
 
@@ -1022,7 +1202,11 @@
           }
         );
 
-        const stackIdentifiers = ["a", "b", "c", "d", "e"];
+        // Dynamically determine number of stacks based on agent type
+        const stackCount = getStackCount();
+        const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+        const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+
         for (const identifier of stackIdentifiers) {
           inputs.push({
             key: `stack_group_${identifier}`,
