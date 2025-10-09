@@ -32,13 +32,16 @@ class Note(BaseModel):
 
     performed_on: int | None = Field(default=None)
 
-    # Calibrations
+    # Calibrations & Settings Update
     tag_number: str | None = Field(default=None)
+    tag_value_before: str | None = Field(default=None)
+    tag_value_after: str | None = Field(default=None)
 
-    # Software changes
-
+    # Software update & Firmware update
+    version: str | None = Field(default=None)
     # Stack replacements
     stack_replacements: str | None = Field(default=None)
+    workorder_id: str | None = Field(default=None)
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
 
 
@@ -67,13 +70,16 @@ class NoteEdit(BaseModel):
 
     performed_on: int | None = Field(default=None)
 
-    # Calibrations
+    # Calibrations & Settings Update
     tag_number: str | None = Field(default=None)
+    tag_value_before: str | None = Field(default=None)
+    tag_value_after: str | None = Field(default=None)
 
-    # Software changes
-
+    # Software update & Firmware update
+    version: str | None = Field(default=None)
     # Stack replacements
     stack_replacements: str | None = Field(default=None)
+    workorder_id: str | None = Field(default=None)
 
 
 class NoteAdd(BaseModel):
@@ -86,14 +92,17 @@ class NoteAdd(BaseModel):
     # Date field for moment of action
     performed_on: int | None = Field(default=None)
 
-    # Settings change
-    # Calibrations
+    # Calibrations & Settings Update
     tag_number: str | None = Field(default=None)
+    tag_value_before: str | None = Field(default=None)
+    tag_value_after: str | None = Field(default=None)
 
-    # Software changes no additional fields
+    # Software update & Firmware update
+    version: str | None = Field(default=None)
 
     # Stack replacements
     stack_replacements: str | None = Field(default=None)
+    workorder_id: str | None = Field(default=None)
 
 
 class NoteRemove(BaseModel):

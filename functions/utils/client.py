@@ -91,7 +91,11 @@ class NotesClient:
             author_name=self.user_name,
             performed_on=add.performed_on,
             tag_number=add.tag_number,
+            tag_value_before=add.tag_value_before,
+            tag_value_after=add.tag_value_after,
+            version=add.version,
             stack_replacements=add.stack_replacements,
+            workorder_id=add.workorder_id,
         )
 
         result = self.document_client.update_one(
@@ -150,8 +154,12 @@ class NotesClient:
             "note_category",
             "performed_on",
             "tag_number",
+            "tag_value_before",
+            "tag_value_after",
+            "version",
             "external_note",
             "stack_replacements",
+            "workorder_id",
         ]:
             if field in edit.model_fields_set:
                 value = getattr(edit, field)

@@ -34,15 +34,19 @@ export interface Note {
   // Date field for moment of action
   performed_on: number | null;
 
-  // Calibrations
+  // Calibration & Settings update
   tag_number: string | null;
+  tag_value_before: string | null;
+  tag_value_after: string | null;
 
-  // Software changes
+  // Software update & Firmware update
+  version: string | null;
+
+  external_note: boolean | null;
 
   // Stack replacements
-
   stack_replacements?: string | null;
-  external_note: boolean | null;
+  workorder_id: string | null;
 }
 
 export interface NoteWithHtml extends Note {

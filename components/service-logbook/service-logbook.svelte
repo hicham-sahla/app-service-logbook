@@ -339,9 +339,10 @@
 
   async function handleAddButtonClick(): Promise<void> {
     const categories = [
-      "Calibrations",
-      "Software changes",
-      "Settings changes",
+      "Calibration",
+      "Software update",
+      "Firmware update",
+      "Settings update",
       "Stack replacements",
       "Other",
     ];
@@ -407,24 +408,23 @@
             const stackIdentifiers = ["a", "b", "c", "d", "e"];
 
             for (const identifier of stackIdentifiers) {
-              // FIX: Access fields directly from value, not from a group
+              // Access fields from the group
+              const group = value[`stack_group_${identifier}`] || {};
               const removed_serial_number =
-                value[`removed_serial_number_${identifier}`] || "";
+                group[`removed_serial_number_${identifier}`] || "";
               const added_serial_number =
-                value[`added_serial_number_${identifier}`] || "";
-              const stack_failed = value[`stack_failed_${identifier}`]
+                group[`added_serial_number_${identifier}`] || "";
+              const stack_failed = group[`stack_failed_${identifier}`]
                 ? "true"
                 : "false";
 
               if (removed_serial_number || added_serial_number) {
-                // Format: ('stack_identifier','removed_serial_number','added_serial_number','stack_failed')
                 stackReplacements.push(
                   `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_failed}')`
                 );
               }
             }
 
-            // Join with semicolons and add trailing semicolon
             if (stackReplacements.length > 0) {
               noteData.stack_replacements = stackReplacements.join(";") + ";";
             }
@@ -734,7 +734,6 @@
         .split(";")
         .filter((r) => r.trim())
         .map((r) => {
-          // Remove parentheses and split by comma
           const match = r.match(/\('([^']+)','([^']*)','([^']*)','([^']+)'\)/);
           if (match) {
             return {
@@ -751,11 +750,13 @@
       for (const replacement of replacements) {
         if (replacement) {
           const identifier = replacement.stack_identifier;
-          initialValue[`removed_serial_number_${identifier}`] =
-            replacement.removed_serial_number;
-          initialValue[`added_serial_number_${identifier}`] =
-            replacement.added_serial_number;
-          initialValue[`stack_failed_${identifier}`] = replacement.stack_failed;
+          initialValue[`stack_group_${identifier}`] = {
+            [`removed_serial_number_${identifier}`]:
+              replacement.removed_serial_number,
+            [`added_serial_number_${identifier}`]:
+              replacement.added_serial_number,
+            [`stack_failed_${identifier}`]: replacement.stack_failed,
+          };
         }
       }
     }
@@ -782,12 +783,12 @@
         const stackIdentifiers = ["a", "b", "c", "d", "e"];
 
         for (const identifier of stackIdentifiers) {
-          // FIX: Access fields directly from result.value, not from a group
+          const group = result.value[`stack_group_${identifier}`] || {};
           const removed_serial_number =
-            result.value[`removed_serial_number_${identifier}`] || "";
+            group[`removed_serial_number_${identifier}`] || "";
           const added_serial_number =
-            result.value[`added_serial_number_${identifier}`] || "";
-          const stack_failed = result.value[`stack_failed_${identifier}`]
+            group[`added_serial_number_${identifier}`] || "";
+          const stack_failed = group[`stack_failed_${identifier}`]
             ? "true"
             : "false";
 
@@ -975,72 +976,136 @@
 
     // Add category-specific fields
     switch (category) {
-      case "Calibrations":
-        inputs.push({
-          key: "tag_number",
-          type: dataVariableOptions.length > 0 ? "Selection" : "String",
-          label: "Tag Number",
-          required: false,
-          ...(dataVariableOptions.length > 0
-            ? { options: dataVariableOptions }
-            : { placeholder: "Enter tag number" }),
-        });
+      case "Calibration":
+        inputs.push(
+          {
+            key: "tag_number",
+            type: dataVariableOptions.length > 0 ? "Selection" : "String",
+            label: "Tag Number",
+            required: false,
+            ...(dataVariableOptions.length > 0
+              ? { options: dataVariableOptions }
+              : { placeholder: "Enter tag number" }),
+          },
+          {
+            key: "tag_value_before",
+            type: "String",
+            label: "Tag Value Before",
+            required: false,
+            placeholder: "Enter value before calibration",
+          },
+          {
+            key: "tag_value_after",
+            type: "String",
+            label: "Tag Value After",
+            required: false,
+            placeholder: "Enter value after calibration",
+          }
+        );
         break;
 
       case "Stack replacements":
-        inputs.push({
-          key: "performed_on",
-          type: "Date",
-          label: "Performed on",
-          required: true,
-          description: "**Required**\n---",
-        });
+        inputs.push(
+          {
+            key: "performed_on",
+            type: "Date",
+            label: "Performed on",
+            required: true,
+            description: "**Required**\n---",
+          },
+          {
+            key: "workorder_id",
+            type: "String",
+            label: "Workorder ID",
+            required: false,
+            placeholder: "Enter the workorder ID if applicable",
+          }
+        );
+
         const stackIdentifiers = ["a", "b", "c", "d", "e"];
         for (const identifier of stackIdentifiers) {
-          inputs.push(
-            {
-              key: `stack_identifier_${identifier}`,
-              type: "String",
-              label: `Stack Location ${identifier.toUpperCase()}`,
-              defaultValue: `Stack ${identifier.toUpperCase()}`,
-              disabled: true,
-            },
-            {
-              key: `removed_serial_number_${identifier}`,
-              type: "String",
-              label: "Removed Serial Number",
-              required: false,
-            },
-            {
-              key: `added_serial_number_${identifier}`,
-              type: "String",
-              label: "Added Serial Number",
-              required: false,
-            },
-            {
-              key: `stack_failed_${identifier}`,
-              type: "Checkbox" as const,
-              label: "Stack Failed",
-              defaultValue: false,
-            }
-          );
+          inputs.push({
+            key: `stack_group_${identifier}`,
+            type: "Group" as const,
+            label: `Stack Location ${identifier.toUpperCase()}`,
+            children: [
+              {
+                key: `stack_identifier_${identifier}`,
+                type: "String",
+                label: "Identifier",
+                defaultValue: `Stack ${identifier.toUpperCase()}`,
+                disabled: true,
+              },
+              {
+                key: `removed_serial_number_${identifier}`,
+                type: "String",
+                label: "Removed Serial",
+                required: false,
+                placeholder: "Enter removed serial",
+              },
+              {
+                key: `added_serial_number_${identifier}`,
+                type: "String",
+                label: "Added Serial",
+                required: false,
+                placeholder: "Enter added serial",
+              },
+              {
+                key: `stack_failed_${identifier}`,
+                type: "Checkbox" as const,
+                label: "Failed",
+                defaultValue: false,
+              },
+            ],
+          });
         }
         break;
 
       case "Settings changes":
-        inputs.push({
-          key: "tag_number",
-          type: dataVariableOptions.length > 0 ? "Selection" : "String",
-          label: "Tag Number",
-          required: false,
-          ...(dataVariableOptions.length > 0
-            ? { options: dataVariableOptions }
-            : { placeholder: "Enter tag number" }),
-        });
+        inputs.push(
+          {
+            key: "tag_number",
+            type: dataVariableOptions.length > 0 ? "Selection" : "String",
+            label: "Tag Number",
+            required: true,
+            ...(dataVariableOptions.length > 0
+              ? { options: dataVariableOptions }
+              : { placeholder: "Enter tag number" }),
+          },
+          {
+            key: "tag_value_before",
+            type: "String",
+            label: "Setting Value Before",
+            required: false,
+            placeholder: "Enter value before change",
+          },
+          {
+            key: "tag_value_after",
+            type: "String",
+            label: "Setting Value After",
+            required: false,
+            placeholder: "Enter value after change",
+          }
+        );
         break;
 
-      case "Software changes":
-        // No unique fields for software changes
+      case "Software update":
+        inputs.push({
+          key: "version",
+          type: "String",
+          label: "Software Version",
+          required: false,
+          placeholder: "Enter new software version (e.g., v2.1.0)",
+        });
+        break;
+      case "Firmware update":
+        inputs.push({
+          key: "version",
+          type: "String",
+          label: "Firmware Version",
+          required: false,
+          placeholder: "Enter new firmware version (e.g., v1.5.2)",
+        });
         break;
 
       default:
