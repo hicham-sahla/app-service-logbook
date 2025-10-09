@@ -101,4 +101,4 @@ class NoteRemove(BaseModel):
 
 
 class NoteImport(BaseModel):
-    notes: List[Note]
+    notes: list[Note]
