@@ -34,11 +34,10 @@ class Note(BaseModel):
 
     # Calibrations & Settings Update
     tag_number: str | None = Field(default=None)
-    tag_value_before: str | None = Field(default=None)
-    tag_value_after: str | None = Field(default=None)
 
-    # Software update & Firmware update
+    # Software update
     version: str | None = Field(default=None)
+    software_type: str | None = Field(default=None)
     # Stack replacements
     stack_replacements: str | None = Field(default=None)
     workorder_id: str | None = Field(default=None)
@@ -72,11 +71,10 @@ class NoteEdit(BaseModel):
 
     # Calibrations & Settings Update
     tag_number: str | None = Field(default=None)
-    tag_value_before: str | None = Field(default=None)
-    tag_value_after: str | None = Field(default=None)
 
     # Software update & Firmware update
     version: str | None = Field(default=None)
+    software_type: str | None = Field(default=None)
     # Stack replacements
     stack_replacements: str | None = Field(default=None)
     workorder_id: str | None = Field(default=None)
@@ -94,12 +92,10 @@ class NoteAdd(BaseModel):
 
     # Calibrations & Settings Update
     tag_number: str | None = Field(default=None)
-    tag_value_before: str | None = Field(default=None)
-    tag_value_after: str | None = Field(default=None)
 
-    # Software update & Firmware update
+    # Software update
     version: str | None = Field(default=None)
-
+    software_type: str | None = Field(default=None)
     # Stack replacements
     stack_replacements: str | None = Field(default=None)
     workorder_id: str | None = Field(default=None)

@@ -36,12 +36,10 @@ export interface Note {
 
   // Calibration & Settings update
   tag_number: string | null;
-  tag_value_before: string | null;
-  tag_value_after: string | null;
 
-  // Software update & Firmware update
+  // Software update
   version: string | null;
-
+  software_type: string | null;
   external_note: boolean | null;
 
   // Stack replacements

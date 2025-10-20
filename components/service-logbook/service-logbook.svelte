@@ -246,14 +246,6 @@
             return true;
           }
 
-          // Search in tag values (before/after)
-          if (note.tag_value_before?.toLowerCase().includes(query)) {
-            return true;
-          }
-          if (note.tag_value_after?.toLowerCase().includes(query)) {
-            return true;
-          }
-
           // Search in version
           if (note.version?.toLowerCase().includes(query)) {
             return true;
@@ -426,8 +418,7 @@
     const categories = [
       "Calibration",
       "Software update",
-      "Firmware update",
-      "Settings update",
+      "Settings change",
       "Stack replacements",
       "Other",
     ];
@@ -1016,47 +1007,38 @@
             <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Tag Number:</strong>
             <span>${note.tag_number || "-"}</span>
           </div>
-          <div style="margin-bottom: 8px;">
-            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Value Before:</strong>
-            <span>${note.tag_value_before || "-"}</span>
-          </div>
-          <div style="margin-bottom: 8px;">
-            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Value After:</strong>
-            <span>${note.tag_value_after || "-"}</span>
-          </div>
         </div>
       `;
         break;
 
-      case "Settings changes":
+      case "Settings change":
         categoryFields = `
         <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
           <div style="margin-bottom: 8px;">
             <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Tag Number:</strong>
             <span>${note.tag_number || "-"}</span>
           </div>
-          <div style="margin-bottom: 8px;">
-            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Setting Before:</strong>
-            <span>${note.tag_value_before || "-"}</span>
-          </div>
-          <div style="margin-bottom: 8px;">
-            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Setting After:</strong>
-            <span>${note.tag_value_after || "-"}</span>
-          </div>
         </div>
       `;
         break;
 
-      case "Software changes":
-      case "Firmware update":
+      case "Software update":
         categoryFields = `
-        <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
-          <div style="margin-bottom: 8px;">
-            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Version:</strong>
-            <span>${note.version || "-"}</span>
-          </div>
-        </div>
-      `;
+    <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+      ${
+        note.software_type
+          ? `<div style="margin-bottom: 8px;">
+        <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Software Type:</strong>
+        <span>${note.software_type}</span>
+      </div>`
+          : ""
+      }
+      <div style="margin-bottom: 8px;">
+        <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Version:</strong>
+        <span>${note.version || "-"}</span>
+      </div>
+    </div>
+  `;
         break;
 
       case "Stack replacements":
@@ -1220,55 +1202,34 @@
 
   function _getNoteInputs(category: string, isEdit = false): ComponentInput[] {
     const inputs: ComponentInput[] = [];
-
+    inputs.push({
+      key: "performed_on",
+      type: "Date",
+      label: "Performed on",
+      required: false,
+    });
     // Add category-specific fields
     switch (category) {
       case "Calibration":
-        inputs.push(
-          {
-            key: "tag_number",
-            type: dataVariableOptions.length > 0 ? "Selection" : "String",
-            label: "Tag Number",
-            required: false,
-            ...(dataVariableOptions.length > 0
-              ? { options: dataVariableOptions }
-              : { placeholder: "Enter tag number" }),
-          },
-          {
-            key: "tag_value_before",
-            type: "String",
-            label: "Tag Value Before",
-            required: false,
-            placeholder: "Enter value before calibration",
-          },
-          {
-            key: "tag_value_after",
-            type: "String",
-            label: "Tag Value After",
-            required: false,
-            placeholder: "Enter value after calibration",
-          }
-        );
+        inputs.push({
+          key: "tag_number",
+          type: dataVariableOptions.length > 0 ? "Selection" : "String",
+          label: "Tag Number",
+          required: false,
+          ...(dataVariableOptions.length > 0
+            ? { options: dataVariableOptions }
+            : { placeholder: "Enter tag number" }),
+        });
         break;
 
       case "Stack replacements":
-        inputs.push(
-          {
-            key: "performed_on",
-            type: "Date",
-            label: "Performed on",
-            required: true,
-            description: "**Required**\n---",
-          },
-          {
-            key: "workorder_id",
-            type: "String",
-            label: "Workorder ID",
-            required: false,
-            placeholder:
-              "Enter the workorder ID if applicable e.g., (WO-002527)",
-          }
-        );
+        inputs.push({
+          key: "workorder_id",
+          type: "String",
+          label: "Workorder ID",
+          required: false,
+          placeholder: "Enter the workorder ID if applicable e.g., (WO-002527)",
+        });
 
         // Dynamically determine number of stacks based on agent type
         const stackCount = getStackCount();
@@ -1313,53 +1274,45 @@
         }
         break;
 
-      case "Settings changes":
-        inputs.push(
-          {
-            key: "tag_number",
-            type: dataVariableOptions.length > 0 ? "Selection" : "String",
-            label: "Tag Number",
-            required: true,
-            ...(dataVariableOptions.length > 0
-              ? { options: dataVariableOptions }
-              : { placeholder: "Enter tag number" }),
-          },
-          {
-            key: "tag_value_before",
-            type: "String",
-            label: "Setting Value Before",
-            required: false,
-            placeholder: "Enter value before change",
-          },
-          {
-            key: "tag_value_after",
-            type: "String",
-            label: "Setting Value After",
-            required: false,
-            placeholder: "Enter value after change",
-          }
-        );
+      case "Settings change":
+        inputs.push({
+          key: "tag_number",
+          type: dataVariableOptions.length > 0 ? "Selection" : "String",
+          label: "Tag Number",
+          required: true,
+          ...(dataVariableOptions.length > 0
+            ? { options: dataVariableOptions }
+            : { placeholder: "Enter tag number" }),
+        });
         break;
 
       case "Software update":
-        inputs.push({
-          key: "version",
-          type: "String",
-          label: "Software Version",
-          required: false,
-          placeholder: "Enter new software version (e.g., v2.1.0)",
-        });
+        inputs.push(
+          {
+            key: "software_type",
+            type: "Selection" as const,
+            label: "Software Type",
+            required: true,
+            options: [
+              { label: "PLC software", value: "PLC software" },
+              { label: "Ixon router", value: "Ixon router" },
+              { label: "HMI software", value: "HMI software" },
+              {
+                label:
+                  "Other (please specify the updated software in the text field below)",
+                value: "Other",
+              },
+            ],
+          },
+          {
+            key: "version",
+            type: "String",
+            label: "Software Version",
+            required: false,
+            placeholder: "Enter new software version (e.g., v2.1.0)",
+          }
+        );
         break;
-      case "Firmware update":
-        inputs.push({
-          key: "version",
-          type: "String",
-          label: "Firmware Version",
-          required: false,
-          placeholder: "Enter new firmware version (e.g., v1.5.2)",
-        });
-        break;
-
       default:
         // No unique fields for other categories
         break;
@@ -1384,6 +1337,8 @@
         type: "Checkbox" as const,
         label: "External Note",
         defaultValue: false,
+        description:
+          "Mark this note as external if it can be viewed by parties outside the company (e.g., external partners or customers)",
       }
     );
 
@@ -1417,7 +1372,16 @@
     const { width, height, backgroundColor } = getStyle(userName, 22);
     const editedBy =
       note.editor_id && note.editor_name
-        ? `<span class="edited-by"><i>${context.translate("EDITED_BY_USER", { user: getNoteEditedBy(usersDict, note) })}</i></span>`
+        ? (() => {
+            const editedByUser = getNoteEditedBy(usersDict, note);
+            const editedDate = note.updated_on
+              ? DateTime.fromMillis(note.updated_on).toLocaleString(
+                  DateTime.DATETIME_SHORT
+                )
+              : "";
+            const dateText = editedDate ? ` on ${editedDate}` : "";
+            return `<span class="edited-by"><i>${context.translate("EDITED_BY_USER", { user: editedByUser })}${dateText}</i></span>`;
+          })()
         : "";
     return `<svg class="user-avatar" style="background-color:${backgroundColor}; width:${width}; height: ${height};"><text x="50%" y="50%" text-anchor="middle" dominant-baseline="central">${getFirstLetter(userName)}</text></svg><span><span class="name">${userName}</span>${editedBy}</span>`;
   }

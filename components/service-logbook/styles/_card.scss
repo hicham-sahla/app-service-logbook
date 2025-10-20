@@ -2,7 +2,7 @@ $card-header-height: 40px;
 
 .card {
   height: 100%;
-  font-family: Roboto, 'Helvetica Neue', sans-serif;
+  font-family: Roboto, "Helvetica Neue", sans-serif;
   font-size: 12px;
   font-weight: 400;
   display: flex;
@@ -11,6 +11,7 @@ $card-header-height: 40px;
   .card-header {
     font-family: var(--font-family);
     height: $card-header-height;
+    box-sizing: border-box;
     box-sizing: border-box;
     text-overflow: ellipsis;
     white-space: nowrap;
