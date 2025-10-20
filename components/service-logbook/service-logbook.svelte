@@ -224,12 +224,79 @@
         }
 
         const query = searchQuery.toLowerCase();
-        return notes.filter(
-          (note) =>
-            getNoteUserName(usersDict, note).toLowerCase().includes(query) ||
-            note.subject?.toLowerCase().includes(query) ||
-            HtmlToReadableText(note.html).toLowerCase().includes(query)
-        );
+        return notes.filter((note) => {
+          // Search in basic fields
+          if (getNoteUserName(usersDict, note).toLowerCase().includes(query)) {
+            return true;
+          }
+          if (note.subject?.toLowerCase().includes(query)) {
+            return true;
+          }
+          if (HtmlToReadableText(note.html).toLowerCase().includes(query)) {
+            return true;
+          }
+
+          // Search in category
+          if (note.note_category?.toLowerCase().includes(query)) {
+            return true;
+          }
+
+          // Search in tag number
+          if (note.tag_number?.toLowerCase().includes(query)) {
+            return true;
+          }
+
+          // Search in tag values (before/after)
+          if (note.tag_value_before?.toLowerCase().includes(query)) {
+            return true;
+          }
+          if (note.tag_value_after?.toLowerCase().includes(query)) {
+            return true;
+          }
+
+          // Search in version
+          if (note.version?.toLowerCase().includes(query)) {
+            return true;
+          }
+
+          // Search in stack replacements (parse the string format)
+          if (note.stack_replacements) {
+            const stackSearchText = note.stack_replacements.toLowerCase();
+            // Search directly in the formatted string
+            if (stackSearchText.includes(query)) {
+              return true;
+            }
+
+            // Also parse and search in individual fields
+            const replacements = note.stack_replacements
+              .split(";")
+              .filter((r) => r.trim());
+
+            for (const replacement of replacements) {
+              const match = replacement.match(
+                /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+              );
+              if (match) {
+                const [, identifier, removed, added, failed] = match;
+                if (
+                  identifier.toLowerCase().includes(query) ||
+                  removed.toLowerCase().includes(query) ||
+                  added.toLowerCase().includes(query) ||
+                  (failed === "true" && "failed".includes(query))
+                ) {
+                  return true;
+                }
+              }
+            }
+          }
+
+          // Search in external note flag
+          if (note.external_note && "external".includes(query)) {
+            return true;
+          }
+
+          return false;
+        });
       }
     );
 
@@ -1198,7 +1265,8 @@
             type: "String",
             label: "Workorder ID",
             required: false,
-            placeholder: "Enter the workorder ID if applicable",
+            placeholder:
+              "Enter the workorder ID if applicable e.g., (WO-002527)",
           }
         );
 
