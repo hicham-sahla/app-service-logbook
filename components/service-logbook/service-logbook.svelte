@@ -491,13 +491,16 @@
                 group[`removed_serial_number_${identifier}`] || "";
               const added_serial_number =
                 group[`added_serial_number_${identifier}`] || "";
-              const stack_failed = group[`stack_failed_${identifier}`]
+              const stack_symptom = group[`stack_symptom_${identifier}`] || "";
+              const stack_symptom_confirmed = group[
+                `stack_symptom_confirmed_${identifier}`
+              ]
                 ? "true"
                 : "false";
 
               if (removed_serial_number || added_serial_number) {
                 stackReplacements.push(
-                  `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_failed}')`
+                  `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_symptom}','${stack_symptom_confirmed}')`
                 );
               }
             }
@@ -797,9 +800,7 @@
 
     const initialValue: any = {
       ...note,
-      performed_on: performed_on_date
-        ? performed_on_date.toISODate()
-        : undefined,
+      performed_on: performed_on_date ? performed_on_date.toISO() : undefined,
     };
 
     if (
@@ -810,13 +811,16 @@
         .split(";")
         .filter((r) => r.trim())
         .map((r) => {
-          const match = r.match(/\('([^']+)','([^']*)','([^']*)','([^']+)'\)/);
+          const match = r.match(
+            /\('([^']+)','([^']*)','([^']*)','([^']*)','([^']+)'\)/
+          );
           if (match) {
             return {
               stack_identifier: match[1],
               removed_serial_number: match[2],
               added_serial_number: match[3],
-              stack_failed: match[4] === "true",
+              stack_symptom: match[4],
+              stack_symptom_confirmed: match[5] === "true",
             };
           }
           return null;
@@ -831,7 +835,9 @@
               replacement.removed_serial_number,
             [`added_serial_number_${identifier}`]:
               replacement.added_serial_number,
-            [`stack_failed_${identifier}`]: replacement.stack_failed,
+            [`stack_symptom_${identifier}`]: replacement.stack_symptom,
+            [`stack_symptom_confirmed_${identifier}`]:
+              replacement.stack_symptom_confirmed,
           };
         }
       }
@@ -866,13 +872,16 @@
             group[`removed_serial_number_${identifier}`] || "";
           const added_serial_number =
             group[`added_serial_number_${identifier}`] || "";
-          const stack_failed = group[`stack_failed_${identifier}`]
+          const stack_symptom = group[`stack_symptom_${identifier}`] || "";
+          const stack_symptom_confirmed = group[
+            `stack_symptom_confirmed_${identifier}`
+          ]
             ? "true"
             : "false";
 
           if (removed_serial_number || added_serial_number) {
             stackReplacements.push(
-              `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_failed}')`
+              `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_symptom}','${stack_symptom_confirmed}')`
             );
           }
         }
@@ -1065,14 +1074,15 @@
             .filter((r) => r.trim())
             .map((r) => {
               const match = r.match(
-                /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+                /\('([^']+)','([^']*)','([^']*)','([^']*)','([^']+)'\)/
               );
               if (match) {
                 return {
                   identifier: match[1],
                   removed: match[2],
                   added: match[3],
-                  failed: match[4] === "true",
+                  symptom: match[4],
+                  confirmed: match[5] === "true",
                 };
               }
               return null;
@@ -1083,21 +1093,33 @@
             stackHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Replacements:</strong></div>`;
 
             replacements.forEach((stack) => {
-              const failedBadge = stack.failed
-                ? `<span style="display: inline-block; padding: 2px 6px; margin-left: 8px; background-color: #ff4444; color: white; border-radius: 3px; font-size: 10px; font-weight: 500;">FAILED</span>`
+              const symptomLabel =
+                {
+                  high_crossover: "High crossover",
+                  conductivity_issues: "Conductivity issues",
+                  external_leak: "External leak",
+                  internal_leak: "Internal leak",
+                  ground_fault: "Ground fault",
+                }[stack.symptom] ||
+                stack.symptom ||
+                "-";
+
+              const confirmedBadge = stack.confirmed
+                ? `<span style="display: inline-block; padding: 2px 6px; margin-left: 8px; background-color: #4caf50; color: white; border-radius: 3px; font-size: 10px; font-weight: 500;">✓ CONFIRMED</span>`
                 : "";
 
               stackHtml += `
-              <div style="margin: 8px 0; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 4%); border-radius: 4px;">
-                <div style="font-weight: 500; margin-bottom: 4px;">
-                  Stack ${stack.identifier.toUpperCase()}${failedBadge}
+                <div style="margin: 8px 0; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 4%); border-radius: 4px;">
+                  <div style="font-weight: 500; margin-bottom: 4px;">
+                    Stack ${stack.identifier.toUpperCase()}${confirmedBadge}
+                  </div>
+                  <div style="font-size: 11px; color: color-mix(in srgb, transparent, currentcolor 30%);">
+                    <div>Removed: ${stack.removed || "-"}</div>
+                    <div>Added: ${stack.added || "-"}</div>
+                    <div>Symptom: ${symptomLabel}</div>
+                  </div>
                 </div>
-                <div style="font-size: 11px; color: color-mix(in srgb, transparent, currentcolor 30%);">
-                  <div>Removed: ${stack.removed || "-"}</div>
-                  <div>Added: ${stack.added || "-"}</div>
-                </div>
-              </div>
-            `;
+              `;
             });
           }
         }
@@ -1264,9 +1286,29 @@
                 placeholder: "Enter added serial",
               },
               {
-                key: `stack_failed_${identifier}`,
+                key: `stack_symptom_${identifier}`,
+                type: "Selection" as const,
+                label: "Stack Symptom",
+                required: false,
+                options: [
+                  { label: "High crossover", value: "high_crossover" },
+                  {
+                    label: "Conductivity issues",
+                    value: "conductivity_issues",
+                  },
+                  { label: "External leak", value: "external_leak" },
+                  { label: "Internal leak", value: "internal_leak" },
+                  {
+                    label:
+                      "Other (please specify the symptom in the text field below)",
+                    value: "Other",
+                  },
+                ],
+              },
+              {
+                key: `stack_symptom_confirmed_${identifier}`,
                 type: "Checkbox" as const,
-                label: "Failed",
+                label: "Stack Symptom Confirmed",
                 defaultValue: false,
               },
             ],
