@@ -1464,6 +1464,9 @@
     }
   }
 
+  // CORRECTED: handleUploadJsonButtonClick function for service-logbook.svelte
+  // Replace your existing handleUploadJsonButtonClick function with this code
+
   async function handleUploadJsonButtonClick(): Promise<void> {
     const result = await context.openFormDialog({
       title: translations.IMPORT_FROM_JSON,
@@ -1485,21 +1488,53 @@
       reader.onload = async (event) => {
         if (event.target && event.target.result) {
           try {
-            const notes = JSON.parse(event.target.result as string);
+            const parsedData = JSON.parse(event.target.result as string);
+
+            // FIX: Extract the notes array from the JSON structure
+            // The export format includes metadata (exported_on, exported_by, etc.)
+            // so we need to extract just the notes array
+            const notesArray = Array.isArray(parsedData)
+              ? parsedData
+              : parsedData.notes;
+
+            // Validate that we actually have a notes array
+            if (!notesArray || !Array.isArray(notesArray)) {
+              context.openAlertDialog({
+                title: "Error",
+                message:
+                  "Invalid JSON file format. Expected a 'notes' array or an array of note objects.",
+              });
+              return;
+            }
+
+            // Check if the array is empty
+            if (notesArray.length === 0) {
+              context.openAlertDialog({
+                title: "Warning",
+                message: "The JSON file contains no notes to import.",
+              });
+              return;
+            }
+
+            // Confirm with user before importing
             const confirmed = await context.openConfirmDialog({
               title: translations.IMPORT,
               message: translations["__TEXT__.CONFIRM_IMPORT"],
               confirmButtonText: translations.IMPORT,
               destructive: true,
             });
+
             if (confirmed) {
-              await notesService.importData(notes);
+              // FIX: Pass ONLY the notes array, not the entire export object
+              await notesService.importData(notesArray);
               await notesService.load();
             }
           } catch (error) {
+            console.error("Import error:", error);
             context.openAlertDialog({
               title: "Error",
-              message: "Invalid JSON file.",
+              message:
+                "Invalid JSON file. Please ensure the file is a valid JSON export from the Service Logbook.",
             });
           }
         }

@@ -1,7 +1,7 @@
 import time
 from typing import Annotated, Generic, TypeVar
 from bson.objectid import ObjectId
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator
 
 T = TypeVar("T")
 
@@ -41,6 +41,20 @@ class Note(BaseModel):
     # Stack replacements
     stack_replacements: str | None = Field(default=None)
     workorder_id: str | None = Field(default=None)
+
+    @field_validator("id", mode="before")
+    @classmethod
+    def convert_string_id_to_objectid(cls, v):
+        """Convert string _id values to ObjectId instances."""
+        if isinstance(v, str):
+            try:
+                return ObjectId(v)
+            except Exception:
+                return ObjectId()
+        elif v is None:
+            return ObjectId()
+        return v
+
     model_config = ConfigDict(arbitrary_types_allowed=True, extra="ignore")
 
 
