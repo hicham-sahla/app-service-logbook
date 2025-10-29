@@ -33,7 +33,7 @@ class Note(BaseModel):
     performed_on: int | None = Field(default=None)
 
     # Calibrations & Settings Update
-    tag_number: str | None = Field(default=None)
+    tag_numbers: list[str] | None = Field(default=None)
 
     # Software update
     version: str | None = Field(default=None)
@@ -84,7 +84,7 @@ class NoteEdit(BaseModel):
     performed_on: int | None = Field(default=None)
 
     # Calibrations & Settings Update
-    tag_number: str | None = Field(default=None)
+    tag_numbers: list[str] | None = Field(default=None)
 
     # Software update & Firmware update
     version: str | None = Field(default=None)
@@ -105,7 +105,7 @@ class NoteAdd(BaseModel):
     performed_on: int | None = Field(default=None)
 
     # Calibrations & Settings Update
-    tag_number: str | None = Field(default=None)
+    tag_numbers: list[str] | None = Field(default=None)
 
     # Software update
     version: str | None = Field(default=None)

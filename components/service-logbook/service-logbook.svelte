@@ -242,10 +242,11 @@
           }
 
           // Search in tag number
-          if (note.tag_number?.toLowerCase().includes(query)) {
+          if (
+            note.tag_numbers?.some((tag) => tag.toLowerCase().includes(query))
+          ) {
             return true;
           }
-
           // Search in version
           if (note.version?.toLowerCase().includes(query)) {
             return true;
@@ -508,6 +509,12 @@
             if (stackReplacements.length > 0) {
               noteData.stack_replacements = stackReplacements.join(";") + ";";
             }
+          }
+          // Transform tag_numbers from array of objects to array of strings
+          if (value.tag_numbers && Array.isArray(value.tag_numbers)) {
+            value.tag_numbers = value.tag_numbers.map((item: any) =>
+              typeof item === "string" ? item : item.tag_number
+            );
           }
 
           // Merge the rest of the form values
@@ -802,7 +809,14 @@
       ...note,
       performed_on: performed_on_date ? performed_on_date.toISO() : undefined,
     };
-
+    // Transform tag_numbers from array of strings to List format
+    if (initialValue.tag_numbers && Array.isArray(initialValue.tag_numbers)) {
+      initialValue.tag_numbers = initialValue.tag_numbers.map(
+        (tag: string) => ({
+          tag_number: tag,
+        })
+      );
+    }
     if (
       note.note_category === "Stack replacements" &&
       note.stack_replacements
@@ -859,7 +873,12 @@
         const date = DateTime.fromISO(performed_on);
         updatedNote.performed_on = date.toMillis();
       }
-
+      // Transform tag_numbers from array of objects to array of strings
+      if (updatedNote.tag_numbers && Array.isArray(updatedNote.tag_numbers)) {
+        updatedNote.tag_numbers = updatedNote.tag_numbers.map((item: any) =>
+          typeof item === "string" ? item : item.tag_number
+        );
+      }
       if (note.note_category === "Stack replacements") {
         const stackReplacements: string[] = [];
         const stackCount = getStackCount();
@@ -1011,24 +1030,24 @@
     switch (note.note_category) {
       case "Calibrations":
         categoryFields = `
-        <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
-          <div style="margin-bottom: 8px;">
-            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Tag Number:</strong>
-            <span>${note.tag_number || "-"}</span>
-          </div>
-        </div>
-      `;
+    <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+      <div style="margin-bottom: 8px;">
+        <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Tag Numbers:</strong>
+        <span>${note.tag_numbers?.join(", ") || "-"}</span>
+      </div>
+    </div>
+  `;
         break;
 
       case "Settings change":
         categoryFields = `
-        <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
-          <div style="margin-bottom: 8px;">
-            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Tag Number:</strong>
-            <span>${note.tag_number || "-"}</span>
-          </div>
-        </div>
-      `;
+    <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+      <div style="margin-bottom: 8px;">
+        <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Tag Numbers:</strong>
+        <span>${note.tag_numbers?.join(", ") || "-"}</span>
+      </div>
+    </div>
+  `;
         break;
 
       case "Software update":
@@ -1234,13 +1253,16 @@
     switch (category) {
       case "Calibration":
         inputs.push({
-          key: "tag_number",
-          type: dataVariableOptions.length > 0 ? "Selection" : "String",
-          label: "Tag Number",
-          required: false,
-          ...(dataVariableOptions.length > 0
-            ? { options: dataVariableOptions }
-            : { placeholder: "Enter tag number" }),
+          key: "tag_numbers",
+          type: "List" as const,
+          label: "Tag Numbers",
+          required: true,
+          itemType: {
+            key: "tag_number",
+            type: "String",
+            label: "Tag Number",
+            placeholder: "Enter tag number",
+          },
         });
         break;
 
@@ -1318,13 +1340,16 @@
 
       case "Settings change":
         inputs.push({
-          key: "tag_number",
-          type: dataVariableOptions.length > 0 ? "Selection" : "String",
-          label: "Tag Number",
+          key: "tag_numbers",
+          type: "List" as const,
+          label: "Tag Numbers",
           required: true,
-          ...(dataVariableOptions.length > 0
-            ? { options: dataVariableOptions }
-            : { placeholder: "Enter tag number" }),
+          itemType: {
+            key: "tag_number",
+            type: "String",
+            label: "Tag Number",
+            placeholder: "Enter tag number",
+          },
         });
         break;
 

@@ -35,7 +35,7 @@ export interface Note {
   performed_on: number | null;
 
   // Calibration & Settings update
-  tag_number: string | null;
+  tag_numbers: string[] | null;
 
   // Software update
   version: string | null;
