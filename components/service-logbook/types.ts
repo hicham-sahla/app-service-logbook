@@ -45,6 +45,9 @@ export interface Note {
   // Stack replacements
   stack_replacements?: string | null;
   workorder_id: string | null;
+
+  // Stack Inspection
+  stack_inspections?: string | null;
 }
 
 export interface NoteWithHtml extends Note {

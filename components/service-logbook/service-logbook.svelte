@@ -282,7 +282,37 @@
               }
             }
           }
+          // Search in stack inspections (parse the string format)
+          if (note.stack_inspections) {
+            const inspectionSearchText = note.stack_inspections.toLowerCase();
+            // Search directly in the formatted string
+            if (inspectionSearchText.includes(query)) {
+              return true;
+            }
 
+            // Also parse and search in individual fields
+            const inspections = note.stack_inspections
+              .split(";")
+              .filter((r) => r.trim());
+
+            for (const inspection of inspections) {
+              const match = inspection.match(
+                /\('([^']+)','([^']*)','([^']*)','([^']*)'\)/
+              );
+              if (match) {
+                const [, identifier, stackIdentifier, serialNumber, insight] =
+                  match;
+                if (
+                  identifier.toLowerCase().includes(query) ||
+                  stackIdentifier.toLowerCase().includes(query) ||
+                  serialNumber.toLowerCase().includes(query) ||
+                  insight.toLowerCase().includes(query)
+                ) {
+                  return true;
+                }
+              }
+            }
+          }
           // Search in external note flag
           if (note.external_note && "external".includes(query)) {
             return true;
@@ -421,6 +451,7 @@
       "Software update",
       "Settings change",
       "Stack replacements",
+      "Stack inspection",
       "Other",
     ];
 
@@ -510,13 +541,37 @@
               noteData.stack_replacements = stackReplacements.join(";") + ";";
             }
           }
+          if (category === "Stack inspection") {
+            const stackInspections: string[] = [];
+            const stackCount = getStackCount();
+            const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+            const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+
+            for (const identifier of stackIdentifiers) {
+              const group = value[`stack_group_inspection_${identifier}`] || {};
+              const stack_identifier =
+                group[`stack_identifier_${identifier}`] || "";
+              const stack_serial_number =
+                group[`stack_serial_number_${identifier}`] || "";
+              const insight = group[`insight_${identifier}`] || "";
+
+              if (stack_identifier || stack_serial_number || insight) {
+                stackInspections.push(
+                  `('${identifier}','${stack_identifier}','${stack_serial_number}','${insight}')`
+                );
+              }
+            }
+
+            if (stackInspections.length > 0) {
+              noteData.stack_inspections = stackInspections.join(";") + ";";
+            }
+          }
           // Transform tag_numbers from array of objects to array of strings
           if (value.tag_numbers && Array.isArray(value.tag_numbers)) {
             value.tag_numbers = value.tag_numbers.map((item: any) =>
               typeof item === "string" ? item : item.tag_number
             );
           }
-
           // Merge the rest of the form values
           const { performed_on, ...restOfValue } = value;
           Object.assign(noteData, restOfValue);
@@ -809,7 +864,7 @@
       ...note,
       performed_on: performed_on_date ? performed_on_date.toISO() : undefined,
     };
-    // Transform tag_numbers from array of strings to List format
+    // Transform tag_numbers from array of strings to List format for display
     if (initialValue.tag_numbers && Array.isArray(initialValue.tag_numbers)) {
       initialValue.tag_numbers = initialValue.tag_numbers.map(
         (tag: string) => ({
@@ -856,7 +911,37 @@
         }
       }
     }
+    if (note.note_category === "Stack inspection" && note.stack_inspections) {
+      const inspections = note.stack_inspections
+        .split(";")
+        .filter((r) => r.trim())
+        .map((r) => {
+          const match = r.match(/\('([^']+)','([^']*)','([^']*)','([^']*)'\)/);
+          if (match) {
+            return {
+              stack_identifier: match[1],
+              stack_identifier_value: match[2],
+              stack_serial_number: match[3],
+              insight: match[4],
+            };
+          }
+          return null;
+        })
+        .filter((r) => r !== null);
 
+      for (const inspection of inspections) {
+        if (inspection) {
+          const identifier = inspection.stack_identifier;
+          initialValue[`stack_group_inspection_${identifier}`] = {
+            [`stack_identifier_${identifier}`]:
+              inspection.stack_identifier_value,
+            [`stack_serial_number_${identifier}`]:
+              inspection.stack_serial_number,
+            [`insight_${identifier}`]: inspection.insight,
+          };
+        }
+      }
+    }
     const result = await context.openFormDialog({
       title: `${translations.EDIT} ${note.note_category}`,
       inputs: _getNoteInputs(note.note_category || "Other", true),
@@ -915,7 +1000,38 @@
 
         updatedNote.stack_replacements = stackReplacements.join(";") + ";";
       }
+      if (note.note_category === "Stack inspection") {
+        const stackInspections: string[] = [];
+        const stackCount = getStackCount();
+        const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+        const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
 
+        for (const identifier of stackIdentifiers) {
+          const group =
+            result.value[`stack_group_inspection_${identifier}`] || {};
+          const stack_identifier =
+            group[`stack_identifier_${identifier}`] || "";
+          const stack_serial_number =
+            group[`stack_serial_number_${identifier}`] || "";
+          const insight = group[`insight_${identifier}`] || "";
+
+          if (stack_identifier || stack_serial_number || insight) {
+            stackInspections.push(
+              `('${identifier}','${stack_identifier}','${stack_serial_number}','${insight}')`
+            );
+          }
+        }
+
+        if (stackInspections.length === 0) {
+          context.openAlertDialog({
+            title: "Validation Error",
+            message: "At least one stack inspection must be filled in.",
+          });
+          return;
+        }
+
+        updatedNote.stack_inspections = stackInspections.join(";") + ";";
+      }
       await notesService.edit(note._id, updatedNote);
     }
   }
@@ -1028,7 +1144,7 @@
     let categoryFields = "";
 
     switch (note.note_category) {
-      case "Calibrations":
+      case "Calibration":
         categoryFields = `
     <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
       <div style="margin-bottom: 8px;">
@@ -1148,6 +1264,54 @@
           ${stackHtml}
         </div>
       `;
+        break;
+      case "Stack inspection":
+        let inspectionHtml = "";
+        if (note.stack_inspections) {
+          const inspections = note.stack_inspections
+            .split(";")
+            .filter((r) => r.trim())
+            .map((r) => {
+              const match = r.match(
+                /\('([^']+)','([^']*)','([^']*)','([^']*)'\)/
+              );
+              if (match) {
+                return {
+                  identifier: match[1],
+                  stack_identifier: match[2],
+                  serial_number: match[3],
+                  insight: match[4],
+                };
+              }
+              return null;
+            })
+            .filter((r) => r !== null);
+
+          if (inspections.length > 0) {
+            inspectionHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Inspections:</strong></div>`;
+
+            inspections.forEach((inspection) => {
+              inspectionHtml += `
+          <div style="margin: 8px 0; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 4%); border-radius: 4px;">
+            <div style="font-weight: 500; margin-bottom: 4px;">
+              Stack ${inspection.identifier.toUpperCase()}
+            </div>
+            <div style="font-size: 11px; color: color-mix(in srgb, transparent, currentcolor 30%);">
+              <div>Stack Identifier: ${inspection.stack_identifier || "-"}</div>
+              <div>Serial Number: ${inspection.serial_number || "-"}</div>
+              <div>Insight: ${inspection.insight || "-"}</div>
+            </div>
+          </div>
+        `;
+            });
+          }
+        }
+
+        categoryFields = `
+    <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+      ${inspectionHtml}
+    </div>
+  `;
         break;
     }
 
@@ -1337,7 +1501,49 @@
           });
         }
         break;
+      case "Stack inspection":
+        // Dynamically determine number of stacks based on agent type
+        const stackCountInspection = getStackCount();
+        const allStackIdentifiersInspection = ["a", "b", "c", "d", "e"];
+        const stackIdentifiersInspection = allStackIdentifiersInspection.slice(
+          0,
+          stackCountInspection
+        );
 
+        for (const identifier of stackIdentifiersInspection) {
+          inputs.push({
+            key: `stack_group_inspection_${identifier}`,
+            type: "Group" as const,
+            label: `Stack ${identifier.toUpperCase()}`,
+            required: false,
+            children: [
+              {
+                key: `stack_identifier_${identifier}`,
+                type: "String",
+                label: "Stack Identifier",
+                placeholder: "e.g., Stack A",
+                required: false,
+                defaultValue: `Stack ${identifier.toUpperCase()}`,
+                disabled: true,
+              },
+              {
+                key: `stack_serial_number_${identifier}`,
+                type: "String",
+                label: "Stack Serial Number",
+                placeholder: "Enter serial number",
+                required: false,
+              },
+              {
+                key: `insight_${identifier}`,
+                type: "String",
+                label: "Insight",
+                placeholder: "Enter insight",
+                required: false,
+              },
+            ],
+          });
+        }
+        break;
       case "Settings change":
         inputs.push({
           key: "tag_numbers",

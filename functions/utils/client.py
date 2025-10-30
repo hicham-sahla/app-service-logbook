@@ -94,6 +94,7 @@ class NotesClient:
             version=add.version,
             software_type=add.software_type,
             stack_replacements=add.stack_replacements,
+            stack_inspections=add.stack_inspections,
             workorder_id=add.workorder_id,
         )
 
@@ -157,6 +158,7 @@ class NotesClient:
             "software_type",
             "external_note",
             "stack_replacements",
+            "stack_inspections",
             "workorder_id",
         ]:
             if field in edit.model_fields_set:

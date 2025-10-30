@@ -42,6 +42,9 @@ class Note(BaseModel):
     stack_replacements: str | None = Field(default=None)
     workorder_id: str | None = Field(default=None)
 
+    # Stack inspection
+    stack_inspections: str | None = Field(default=None)
+
     @field_validator("id", mode="before")
     @classmethod
     def convert_string_id_to_objectid(cls, v):
@@ -93,6 +96,9 @@ class NoteEdit(BaseModel):
     stack_replacements: str | None = Field(default=None)
     workorder_id: str | None = Field(default=None)
 
+    # Stack inspection
+    stack_inspections: str | None = Field(default=None)
+
 
 class NoteAdd(BaseModel):
     text: str
@@ -113,6 +119,9 @@ class NoteAdd(BaseModel):
     # Stack replacements
     stack_replacements: str | None = Field(default=None)
     workorder_id: str | None = Field(default=None)
+
+    # Stack inspection
+    stack_inspections: str | None = Field(default=None)
 
 
 class NoteRemove(BaseModel):
