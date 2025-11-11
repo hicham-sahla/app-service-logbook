@@ -1477,6 +1477,7 @@
                 label: "Stack Symptom",
                 required: false,
                 options: [
+                  { label: "None", value: null },
                   { label: "High crossover", value: "high_crossover" },
                   {
                     label: "Conductivity issues",
@@ -1484,6 +1485,7 @@
                   },
                   { label: "External leak", value: "external_leak" },
                   { label: "Internal leak", value: "internal_leak" },
+                  { label: "Tie Rod", value: "tie_rod" },
                   {
                     label:
                       "Other (please specify the symptom in the text field below)",

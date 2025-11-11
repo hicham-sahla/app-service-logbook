@@ -1,6 +1,6 @@
 {
   "main": "app-service-logbook.min.js",
-  "version": "5",
+  "version": "6",
   "sheetSettings": {
     "minCols": 4,
     "minRows": 4
