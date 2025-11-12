@@ -10,7 +10,7 @@ from functions.utils.types import (
     Note,
     NoteImport,
 )
-from functions.utils.utils import notes_endpoint, permission_check
+from functions.utils.utils import notes_endpoint
 from ixoncdkingress.cbc.context import CbcContext
 
 
@@ -45,13 +45,7 @@ def edit(
     notes_client: NotesClient,
     model: NoteEdit,
 ) -> ErrorResponse[None] | SuccessResponse[Note]:
-    if context.user is None or not permission_check(
-        context, notes_client, model.note_id
-    ):
-        return ErrorResponse(
-            message="You do not have the rights to perform this action"
-        )
-
+    # Permission check removed - anyone can edit any note
     note = notes_client.edit(model)
 
     if isinstance(note, ErrorResponse):
@@ -67,13 +61,7 @@ def remove(
     notes_client: NotesClient,
     model: NoteRemove,
 ) -> ErrorResponse[None] | SuccessResponse[None]:
-    if context.user is None or not permission_check(
-        context, notes_client, model.note_id
-    ):
-        return ErrorResponse(
-            message="You do not have the rights to perform this action"
-        )
-
+    # Permission check removed - anyone can remove any note
     error = notes_client.remove(model.note_id)
 
     if error is not None:
@@ -104,11 +92,7 @@ def import_data(
     """
     Imports all notes from a JSON file.
     """
-    if context.user is None or not permission_check(context, notes_client):
-        return ErrorResponse(
-            message="You do not have the rights to perform this action"
-        )
-
+    # Permission check removed - anyone can import notes
     notes_client.set_notes(model.notes)
 
     return SuccessResponse(message="Imported Notes")

@@ -391,22 +391,8 @@
     _myUser: ResourceData.MyUser | null,
     note: Note
   ): boolean {
-    // Company admin users are able to modify or delete any user’s notes.
-    if (_agentOrAsset?.permissions?.includes("COMPANY_ADMIN")) {
-      return true;
-    }
-    // Users with rights to manage this device are able to modify or delete any user’s notes.
-    if (_agentOrAsset?.permissions?.includes("MANAGE_AGENT")) {
-      return true;
-    }
-    // Support users are able to modify or delete any user’s notes.
-    if (_myUser?.support) {
-      return true;
-    }
-    // Users are able to modify or delete their own notes.
-    return (
-      note.author_id === _myUser?.publicId || note.user === _myUser?.publicId
-    );
+    // Anyone can edit any note - restriction removed
+    return true;
   }
 
   function getNoteUserName(
