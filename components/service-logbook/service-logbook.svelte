@@ -804,12 +804,14 @@
     event.stopImmediatePropagation();
     const actions = [
       { type: "edit", title: translations.EDIT },
+      { type: "recategorize", title: "Recategorize" }, // Add this line
       { type: "export", title: translations.EXPORT },
       { type: "remove", title: translations.REMOVE, destructive: true },
     ].filter((action) => {
       switch (action.type) {
         case "edit":
         case "remove":
+        case "recategorize": // Add this line
           return getNoteIsActionable(agentOrAsset, myUser, note);
         default:
           return true;
@@ -824,6 +826,12 @@
       switch (resultAction?.type) {
         case "edit":
           handleEditNoteButtonClick(note);
+          if (closeDialog) {
+            closeDialog();
+          }
+          break;
+        case "recategorize": // Add this new case
+          handleRecategorizeNoteButtonClick(note);
           if (closeDialog) {
             closeDialog();
           }
@@ -1021,7 +1029,329 @@
       await notesService.edit(note._id, updatedNote);
     }
   }
+  async function handleRecategorizeNoteButtonClick(note: Note): Promise<void> {
+    const categories = [
+      "Calibration",
+      "Software update",
+      "Settings change",
+      "Stack replacements",
+      "Stack inspection",
+      "Other",
+    ];
 
+    let step = "select_category";
+    let newCategory: string | null = null;
+
+    while (step !== "exit") {
+      // Step 1: Select new category
+      if (step === "select_category") {
+        const categoryResult = await context.openFormDialog({
+          title: "Recategorize Note - Select New Category",
+          inputs: [
+            {
+              key: "new_category",
+              type: "Selection",
+              label: "New Category",
+              required: true,
+              options: categories.map((c) => ({ label: c, value: c })),
+              description:
+                "Choose the category you want to recategorize this note to",
+            },
+          ],
+          submitButtonText: "Next: Fill New Fields",
+          cancelButtonText: "Cancel",
+        });
+
+        if (categoryResult && categoryResult.value) {
+          newCategory = categoryResult.value.new_category;
+          step = "fill_new_fields";
+        } else {
+          step = "exit";
+        }
+      }
+      // Step 2: Fill in new category fields (with current details visible at top)
+      else if (step === "fill_new_fields") {
+        if (!newCategory) {
+          step = "select_category";
+          continue;
+        }
+
+        // Build inputs array with current note details at top (disabled/read-only)
+        const allInputs: ComponentInput[] = [];
+
+        // === CURRENT NOTE DETAILS SECTION (READ-ONLY) ===
+        allInputs.push({
+          key: "separator_current",
+          type: "String",
+          label: "━━━━━ CURRENT NOTE (for reference) ━━━━━",
+          defaultValue: "",
+          disabled: true,
+        });
+
+        allInputs.push({
+          key: "current_category_display",
+          type: "String",
+          label: "Current Category",
+          defaultValue: note.note_category || "Other",
+          disabled: true,
+        });
+
+        // Show performed_on if exists
+        if (note.performed_on) {
+          const performed_on_date = DateTime.fromMillis(note.performed_on);
+          allInputs.push({
+            key: "current_performed_on",
+            type: "String",
+            label: "Current Performed On",
+            defaultValue: performed_on_date.toLocaleString(DateTime.DATE_SHORT),
+            disabled: true,
+          });
+        }
+
+        // Show category-specific current fields based on note category
+        switch (note.note_category) {
+          case "Calibration":
+          case "Settings change":
+            if (note.tag_numbers && note.tag_numbers.length > 0) {
+              allInputs.push({
+                key: "current_tag_numbers",
+                type: "String",
+                label: "Current Tag Numbers",
+                defaultValue: note.tag_numbers.join(", "),
+                disabled: true,
+              });
+            }
+            break;
+
+          case "Software update":
+            if (note.software_type) {
+              allInputs.push({
+                key: "current_software_type",
+                type: "String",
+                label: "Current Software Type",
+                defaultValue: note.software_type,
+                disabled: true,
+              });
+            }
+            if (note.version) {
+              allInputs.push({
+                key: "current_version",
+                type: "String",
+                label: "Current Version",
+                defaultValue: note.version,
+                disabled: true,
+              });
+            }
+            break;
+
+          case "Stack replacements":
+            if (note.workorder_id) {
+              allInputs.push({
+                key: "current_workorder_id",
+                type: "String",
+                label: "Current Workorder ID",
+                defaultValue: note.workorder_id,
+                disabled: true,
+              });
+            }
+            if (note.stack_replacements) {
+              allInputs.push({
+                key: "current_stack_replacements",
+                type: "String",
+                label: "Current Stack Replacements",
+                defaultValue: note.stack_replacements,
+                disabled: true,
+              });
+            }
+            break;
+
+          case "Stack inspection":
+            if (note.stack_inspections) {
+              allInputs.push({
+                key: "current_stack_inspections",
+                type: "String",
+                label: "Current Stack Inspections",
+                defaultValue: note.stack_inspections,
+                disabled: true,
+              });
+            }
+            break;
+        }
+
+        // Show current text (description)
+        allInputs.push({
+          key: "current_text",
+          type: "String",
+          label: "Current Description",
+          defaultValue:
+            note.text.replace(/<[^>]*>/g, "").substring(0, 200) +
+            (note.text.length > 200 ? "..." : ""),
+          disabled: true,
+        });
+
+        // Show external note status
+        if (note.external_note) {
+          allInputs.push({
+            key: "current_external_note",
+            type: "String",
+            label: "Current External Note",
+            defaultValue: "Yes",
+            disabled: true,
+          });
+        }
+
+        // === NEW CATEGORY FIELDS SECTION (EDITABLE) ===
+        allInputs.push({
+          key: "separator_new",
+          type: "String",
+          label: `━━━━━ NEW ${newCategory.toUpperCase()} FIELDS ━━━━━`,
+          defaultValue: "",
+          disabled: true,
+        });
+
+        // Add the new category's input fields
+        const newCategoryInputs = _getNoteInputs(newCategory, true);
+        allInputs.push(...newCategoryInputs);
+
+        const newFieldsResult = await context.openFormDialog({
+          title: `Recategorize to ${newCategory}`,
+          inputs: allInputs,
+          initialValue: {
+            // Preserve common fields
+            performed_on: note.performed_on
+              ? DateTime.fromMillis(note.performed_on).toISODate()
+              : null,
+            text: note.text,
+            external_note: note.external_note ?? false,
+          },
+          submitButtonText: "Recategorize Note",
+          cancelButtonText: "Previous",
+          discardChangesPrompt: true,
+        });
+
+        if (newFieldsResult && newFieldsResult.value) {
+          const { value } = newFieldsResult;
+          const updatedNote: Partial<Note> = {
+            note_category: newCategory,
+            text: value.text,
+            external_note: value.external_note ?? false,
+          };
+
+          // Handle performed_on
+          if (value.performed_on) {
+            const date = DateTime.fromISO(value.performed_on);
+            updatedNote.performed_on = date.toMillis();
+          }
+
+          // Clear old category-specific fields
+          updatedNote.tag_numbers = null;
+          updatedNote.version = null;
+          updatedNote.software_type = null;
+          updatedNote.stack_replacements = null;
+          updatedNote.stack_inspections = null;
+          updatedNote.workorder_id = null;
+
+          // Handle new category-specific fields
+          switch (newCategory) {
+            case "Calibration":
+            case "Settings change":
+              if (value.tag_numbers && Array.isArray(value.tag_numbers)) {
+                updatedNote.tag_numbers = value.tag_numbers.map((item: any) =>
+                  typeof item === "string" ? item : item.tag_number
+                );
+              }
+              break;
+
+            case "Software update":
+              updatedNote.software_type = value.software_type || null;
+              updatedNote.version = value.version || null;
+              break;
+
+            case "Stack replacements":
+              updatedNote.workorder_id = value.workorder_id || null;
+              const stackReplacements: string[] = [];
+              const stackCount = getStackCount();
+              const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+              const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+
+              for (const identifier of stackIdentifiers) {
+                const group = value[`stack_group_${identifier}`] || {};
+                const removed_serial_number =
+                  group[`removed_serial_number_${identifier}`] || "";
+                const added_serial_number =
+                  group[`added_serial_number_${identifier}`] || "";
+                const stack_symptom =
+                  group[`stack_symptom_${identifier}`] || "";
+                const stack_symptom_confirmed = group[
+                  `stack_symptom_confirmed_${identifier}`
+                ]
+                  ? "true"
+                  : "false";
+
+                if (removed_serial_number || added_serial_number) {
+                  stackReplacements.push(
+                    `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_symptom}','${stack_symptom_confirmed}')`
+                  );
+                }
+              }
+
+              if (stackReplacements.length === 0) {
+                await context.openAlertDialog({
+                  title: "Validation Error",
+                  message: "At least one stack replacement must be filled in.",
+                });
+                continue; // Stay in this step
+              }
+
+              updatedNote.stack_replacements = stackReplacements.join(",");
+              break;
+
+            case "Stack inspection":
+              const stackInspections: string[] = [];
+              const stackCount2 = getStackCount();
+              const allStackIdentifiers2 = ["a", "b", "c", "d", "e"];
+              const stackIdentifiers2 = allStackIdentifiers2.slice(
+                0,
+                stackCount2
+              );
+
+              for (const identifier of stackIdentifiers2) {
+                const group =
+                  value[`stack_group_inspection_${identifier}`] || {};
+                const stack_identifier_value =
+                  group[`stack_identifier_${identifier}`] || "";
+                const stack_serial_number =
+                  group[`stack_serial_number_${identifier}`] || "";
+                const insight = group[`insight_${identifier}`] || "";
+
+                if (stack_identifier_value || stack_serial_number || insight) {
+                  stackInspections.push(
+                    `('${identifier}','${stack_identifier_value}','${stack_serial_number}','${insight}')`
+                  );
+                }
+              }
+
+              if (stackInspections.length === 0) {
+                await context.openAlertDialog({
+                  title: "Validation Error",
+                  message: "At least one stack inspection must be filled in.",
+                });
+                continue; // Stay in this step
+              }
+
+              updatedNote.stack_inspections = stackInspections.join(",");
+              break;
+          }
+
+          // Save the recategorized note
+          await notesService.edit(note._id, updatedNote);
+          step = "exit";
+        } else {
+          step = "select_category";
+        }
+      }
+    }
+  }
   function handleSearchButtonClick(): void {
     searchInputVisible = true;
     tick().then(() => {
