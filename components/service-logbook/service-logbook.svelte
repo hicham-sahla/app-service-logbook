@@ -96,6 +96,136 @@
     return 5;
   }
 
+  /**
+   * Validates serial number format
+   * Rules:
+   * - Must start with "A-" or "ST-" (case-insensitive)
+   * - Must contain exactly 3 "-" characters
+   * - Must end with "-001"
+   * - Must be exactly 17 characters long
+   */
+  /**
+   * Validates serial number format
+   * Rules:
+   * - Must start with "A-" or "ST-" (case-insensitive)
+   * - Must contain exactly 3 "-" characters
+   * - Must end with "-001"
+   * - Must be exactly 17 characters (if starts with "A-") or 18 characters (if starts with "ST-")
+   */
+  function validateSerialNumber(
+    serialNumber: string,
+    fieldLabel: string
+  ): string[] {
+    if (!serialNumber || serialNumber.trim() === "") {
+      return []; // Empty is allowed since fields are not required
+    }
+
+    const errors: string[] = [];
+    const upperSerial = serialNumber.toUpperCase();
+
+    // Check if starts with "A-" or "ST-" (case-insensitive)
+    const startsWithA = upperSerial.startsWith("A-");
+    const startsWithST = upperSerial.startsWith("ST-");
+
+    if (!startsWithA && !startsWithST) {
+      errors.push(
+        `${fieldLabel}: must start with "A-" or "ST-" (case-insensitive)`
+      );
+    }
+
+    // Check length based on prefix
+    if (startsWithA && serialNumber.length !== 17) {
+      errors.push(
+        `${fieldLabel}: must be exactly 17 characters for "A-" prefix (currently ${serialNumber.length})`
+      );
+    } else if (startsWithST && serialNumber.length !== 18) {
+      errors.push(
+        `${fieldLabel}: must be exactly 18 characters for "ST-" prefix (currently ${serialNumber.length})`
+      );
+    } else if (
+      !startsWithA &&
+      !startsWithST &&
+      serialNumber.length !== 17 &&
+      serialNumber.length !== 18
+    ) {
+      // If prefix is wrong, still give feedback on expected length
+      errors.push(
+        `${fieldLabel}: must be exactly 17 characters (for "A-") or 18 characters (for "ST-")`
+      );
+    }
+
+    // Count "-" characters
+    const dashCount = (serialNumber.match(/-/g) || []).length;
+    if (dashCount !== 3) {
+      errors.push(
+        `${fieldLabel}: must contain exactly 3 "-" characters (found ${dashCount})`
+      );
+    }
+
+    // Check if ends with "-001"
+    if (!serialNumber.endsWith("-001")) {
+      errors.push(`${fieldLabel}: must end with "-001"`);
+    }
+
+    return errors;
+  }
+
+  /**
+   * Validates all serial numbers in the form result
+   */
+  function validateAllSerialNumbers(value: any, category: string): string[] {
+    const errors: string[] = [];
+
+    if (category === "Stack replacements") {
+      const stackCount = getStackCount();
+      const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+      const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+
+      for (const identifier of stackIdentifiers) {
+        const group = value[`stack_group_${identifier}`] || {};
+        const removedSerial =
+          group[`removed_serial_number_${identifier}`] || "";
+        const addedSerial = group[`added_serial_number_${identifier}`] || "";
+
+        if (removedSerial) {
+          const fieldErrors = validateSerialNumber(
+            removedSerial,
+            `Stack ${identifier.toUpperCase()} - Removed Serial`
+          );
+          errors.push(...fieldErrors);
+        }
+
+        if (addedSerial) {
+          const fieldErrors = validateSerialNumber(
+            addedSerial,
+            `Stack ${identifier.toUpperCase()} - Added Serial`
+          );
+          errors.push(...fieldErrors);
+        }
+      }
+    }
+
+    if (category === "Stack inspection") {
+      const stackCount = getStackCount();
+      const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+      const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+
+      for (const identifier of stackIdentifiers) {
+        const group = value[`stack_group_inspection_${identifier}`] || {};
+        const stackSerial = group[`stack_serial_number_${identifier}`] || "";
+
+        if (stackSerial) {
+          const fieldErrors = validateSerialNumber(
+            stackSerial,
+            `Stack ${identifier.toUpperCase()} - Serial Number`
+          );
+          errors.push(...fieldErrors);
+        }
+      }
+    }
+
+    return errors;
+  }
   async function fetchDataVariables(
     agentId: string
   ): Promise<{ value: string; label: string; shortLabel: string }[]> {
@@ -474,19 +604,50 @@
           step = "category";
           continue;
         }
-        const noteResult = await context.openFormDialog({
-          title: `${translations.ADD} ${category}`,
-          inputs: _getNoteInputs(category),
-          submitButtonText: translations.ADD,
-          cancelButtonText: "Previous",
-          discardChangesPrompt: true,
-        });
+
+        let noteResult: any = null;
+        let validationErrors: string[] = [];
+
+        // Loop until validation passes
+        do {
+          noteResult = await context.openFormDialog({
+            title: `${translations.ADD} ${category}`,
+            inputs: _getNoteInputs(category),
+            initialValue: noteResult ? noteResult.value : undefined,
+            submitButtonText: translations.ADD,
+            cancelButtonText: "Previous",
+            discardChangesPrompt: true,
+          });
+
+          if (!noteResult || !noteResult.value) {
+            step = "category";
+            break;
+          }
+
+          // Validate serial numbers
+          validationErrors = validateAllSerialNumbers(
+            noteResult.value,
+            category
+          );
+
+          if (validationErrors.length > 0) {
+            await context.openAlertDialog({
+              title: "Validation Error",
+              message:
+                "Please correct the following serial number errors:\n\n" +
+                validationErrors
+                  .map((error, index) => `${index + 1}. ${error}`)
+                  .join("\n"),
+            });
+          }
+        } while (validationErrors.length > 0);
 
         if (noteResult && noteResult.value) {
           const { value } = noteResult;
           const noteData: Partial<Note> = {
             note_category: category,
             external_note: value.external_note ?? false,
+            text: value.text || "",
           };
 
           // Add this block to handle the date for Stack Replacements
@@ -558,13 +719,11 @@
               typeof item === "string" ? item : item.tag_number
             );
           }
-          // Merge the rest of the form values
-          const { performed_on, ...restOfValue } = value;
-          Object.assign(noteData, restOfValue);
-          notesService.add(noteData);
+
+          Object.assign(noteData, value);
+
+          const savedNote = await notesService.add(noteData);
           step = "exit";
-        } else {
-          step = "category";
         }
       }
     }
@@ -936,13 +1095,41 @@
         }
       }
     }
-    const result = await context.openFormDialog({
-      title: `${translations.EDIT} ${note.note_category}`,
-      inputs: _getNoteInputs(note.note_category || "Other", true),
-      initialValue,
-      submitButtonText: translations.CONFIRM,
-      discardChangesPrompt: true,
-    });
+
+    let result: any = null;
+    let validationErrors: string[] = [];
+
+    // Loop until validation passes
+    do {
+      result = await context.openFormDialog({
+        title: `${translations.EDIT} ${note.note_category}`,
+        inputs: _getNoteInputs(note.note_category || "Other", true),
+        initialValue: result ? result.value : initialValue,
+        submitButtonText: translations.CONFIRM,
+        discardChangesPrompt: true,
+      });
+
+      if (!result || !result.value) {
+        return; // User cancelled
+      }
+
+      // Validate serial numbers
+      validationErrors = validateAllSerialNumbers(
+        result.value,
+        note.note_category || ""
+      );
+
+      if (validationErrors.length > 0) {
+        await context.openAlertDialog({
+          title: "Validation Error",
+          message:
+            "Please correct the following serial number errors:\n\n" +
+            validationErrors
+              .map((error, index) => `${index + 1}. ${error}`)
+              .join("\n"),
+        });
+      }
+    } while (validationErrors.length > 0);
 
     if (result && result.value) {
       const { performed_on, ...rest } = result.value;
@@ -1213,21 +1400,51 @@
         const newCategoryInputs = _getNoteInputs(newCategory, true);
         allInputs.push(...newCategoryInputs);
 
-        const newFieldsResult = await context.openFormDialog({
-          title: `Recategorize to ${newCategory}`,
-          inputs: allInputs,
-          initialValue: {
-            // Preserve common fields
-            performed_on: note.performed_on
-              ? DateTime.fromMillis(note.performed_on).toISODate()
-              : null,
-            text: note.text,
-            external_note: note.external_note ?? false,
-          },
-          submitButtonText: "Recategorize Note",
-          cancelButtonText: "Previous",
-          discardChangesPrompt: true,
-        });
+        let newFieldsResult: any = null;
+        let validationErrors: string[] = [];
+
+        // Loop until validation passes
+        do {
+          newFieldsResult = await context.openFormDialog({
+            title: `Recategorize to ${newCategory}`,
+            inputs: allInputs,
+            initialValue: newFieldsResult
+              ? newFieldsResult.value
+              : {
+                  // Preserve common fields
+                  performed_on: note.performed_on
+                    ? DateTime.fromMillis(note.performed_on).toISODate()
+                    : null,
+                  text: note.text,
+                  external_note: note.external_note ?? false,
+                },
+            submitButtonText: "Recategorize Note",
+            cancelButtonText: "Previous",
+            discardChangesPrompt: true,
+          });
+
+          if (!newFieldsResult || !newFieldsResult.value) {
+            step = "select_category";
+            break;
+          }
+
+          // Validate serial numbers
+          validationErrors = validateAllSerialNumbers(
+            newFieldsResult.value,
+            newCategory
+          );
+
+          if (validationErrors.length > 0) {
+            await context.openAlertDialog({
+              title: "Validation Error",
+              message:
+                "Please correct the following serial number errors:\n\n" +
+                validationErrors
+                  .map((error, index) => `${index + 1}. ${error}`)
+                  .join("\n"),
+            });
+          }
+        } while (validationErrors.length > 0);
 
         if (newFieldsResult && newFieldsResult.value) {
           const { value } = newFieldsResult;
