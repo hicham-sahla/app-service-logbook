@@ -440,7 +440,6 @@
       "Stack inspection",
       "Other",
     ];
-
     let step = "category";
     let category: string | null = null;
     let performed_on: string | null = null;
@@ -481,28 +480,19 @@
           cancelButtonText: "Previous",
           discardChangesPrompt: true,
         });
-
         if (noteResult && noteResult.value) {
           const { value } = noteResult;
           const noteData: Partial<Note> = {
             note_category: category,
             external_note: value.external_note ?? false,
           };
-
-          // Add this block to handle the date for Stack Replacements
-          if (category === "Stack replacements" && value.performed_on) {
-            const performedOnDate = DateTime.fromISO(value.performed_on);
-            if (performedOnDate.isValid) {
-              noteData.performed_on = performedOnDate.toMillis();
-            }
-          }
+          // Removed the old 'Stack replacements' specific date handling block (lines 89-91 original)
 
           if (category === "Stack replacements") {
             const stackReplacements: string[] = [];
             const stackCount = getStackCount();
             const allStackIdentifiers = ["a", "b", "c", "d", "e"];
             const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
-
             for (const identifier of stackIdentifiers) {
               const group = value[`stack_group_${identifier}`] || {};
               const removed_serial_number =
@@ -515,7 +505,6 @@
               ]
                 ? "true"
                 : "false";
-
               if (removed_serial_number || added_serial_number) {
                 stackReplacements.push(
                   `('${identifier}','${removed_serial_number}','${added_serial_number}','${stack_symptom}','${stack_symptom_confirmed}')`
@@ -532,7 +521,6 @@
             const stackCount = getStackCount();
             const allStackIdentifiers = ["a", "b", "c", "d", "e"];
             const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
-
             for (const identifier of stackIdentifiers) {
               const group = value[`stack_group_inspection_${identifier}`] || {};
               const stack_identifier =
@@ -558,6 +546,15 @@
               typeof item === "string" ? item : item.tag_number
             );
           }
+
+          // FIX: Universal performed_on handling for all categories
+          if (value.performed_on) {
+            const performedOnDate = DateTime.fromISO(value.performed_on);
+            if (performedOnDate.isValid) {
+              noteData.performed_on = performedOnDate.toMillis();
+            }
+          }
+
           // Merge the rest of the form values
           const { performed_on, ...restOfValue } = value;
           Object.assign(noteData, restOfValue);
@@ -1446,7 +1443,6 @@
     const sanitizedHtml = context.sanitizeHtml(note.html, {
       allowStyleAttr: true,
     });
-
     // Category section
     const categoryName = note.note_category || "Uncategorized";
     const categorySection = `
@@ -1456,9 +1452,28 @@
     </div>
   `;
 
+    // FIX: Universal check and display for 'Performed On'
+    let performedOnHtml = "";
+    if (note.performed_on) {
+      const performedDate = DateTime.fromMillis(
+        note.performed_on
+      ).toLocaleString({
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      });
+      performedOnHtml = `
+          <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+            <div style="margin-bottom: 8px;">
+              <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Performed On:</strong>
+              <span>${performedDate}</span>
+            </div>
+          </div>
+        `;
+    }
+
     // Build category-specific fields section
     let categoryFields = "";
-
     switch (note.note_category) {
       case "Calibration":
         categoryFields = `
@@ -1470,7 +1485,6 @@
     </div>
   `;
         break;
-
       case "Settings change":
         categoryFields = `
     <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
@@ -1481,7 +1495,6 @@
     </div>
   `;
         break;
-
       case "Software update":
         categoryFields = `
     <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
@@ -1500,24 +1513,10 @@
     </div>
   `;
         break;
-
       case "Stack replacements":
         let stackHtml = "";
-        if (note.performed_on) {
-          const performedDate = DateTime.fromMillis(
-            note.performed_on
-          ).toLocaleString({
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-          });
-          stackHtml += `
-          <div style="margin-bottom: 12px;">
-            <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Performed On:</strong>
-            <span>${performedDate}</span>
-          </div>
-        `;
-        }
+
+        // Removed the original 'if (note.performed_on)' block that was here
 
         if (note.stack_replacements) {
           const replacements = note.stack_replacements
@@ -1542,7 +1541,6 @@
 
           if (replacements.length > 0) {
             stackHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Replacements:</strong></div>`;
-
             replacements.forEach((stack) => {
               const symptomLabel =
                 {
@@ -1605,7 +1603,6 @@
 
           if (inspections.length > 0) {
             inspectionHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Inspections:</strong></div>`;
-
             inspections.forEach((inspection) => {
               inspectionHtml += `
           <div style="margin: 8px 0; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 4%); border-radius: 4px;">
@@ -1639,7 +1636,6 @@
          </span>
        </div>`
       : "";
-
     return `
     <div class="card">
       <div class="card-header">
@@ -1656,6 +1652,7 @@
         ${subject}
         ${externalNoteBadge}
         ${categorySection}
+        ${performedOnHtml}
         ${categoryFields}
         <div style="margin-top: 16px;">
           ${sanitizedHtml}
@@ -1727,7 +1724,7 @@
       key: "performed_on",
       type: "Date",
       label: "Performed on",
-      required: false,
+      required: true,
     });
     // Add category-specific fields
     switch (category) {
@@ -1916,7 +1913,7 @@
         type: "RichText" as const,
         label: "Description of event",
         placeholder: "Description of event",
-        required: true,
+        required: false,
         translate: false,
         description:
           category === "Stack replacements"
