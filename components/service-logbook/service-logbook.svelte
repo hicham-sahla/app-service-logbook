@@ -285,28 +285,49 @@
           // Search in stack inspections (parse the string format)
           if (note.stack_inspections) {
             const inspectionSearchText = note.stack_inspections.toLowerCase();
-            // Search directly in the formatted string
             if (inspectionSearchText.includes(query)) {
               return true;
             }
 
-            // Also parse and search in individual fields
             const inspections = note.stack_inspections
               .split(";")
               .filter((r) => r.trim());
 
             for (const inspection of inspections) {
               const match = inspection.match(
-                /\('([^']+)','([^']*)','([^']*)','([^']*)'\)/
+                /\('([^']+)','([^']*)','([^']*)'\)/
               );
               if (match) {
-                const [, identifier, stackIdentifier, serialNumber, insight] =
-                  match;
+                const [, identifier, serialNumber, insight] = match;
                 if (
                   identifier.toLowerCase().includes(query) ||
-                  stackIdentifier.toLowerCase().includes(query) ||
                   serialNumber.toLowerCase().includes(query) ||
                   insight.toLowerCase().includes(query)
+                ) {
+                  return true;
+                }
+              }
+            }
+          }
+          // Search in stack installs (parse the string format)
+          // Search in stack installs (parse the string format)
+          if (note.stack_installs) {
+            const installsSearchText = note.stack_installs.toLowerCase();
+            if (installsSearchText.includes(query)) {
+              return true;
+            }
+
+            const installs = note.stack_installs
+              .split(";")
+              .filter((r) => r.trim());
+
+            for (const install of installs) {
+              const match = install.match(/\('([^']+)','([^']*)'\)/);
+              if (match) {
+                const [, identifier, serialNumber] = match;
+                if (
+                  identifier.toLowerCase().includes(query) ||
+                  serialNumber.toLowerCase().includes(query)
                 ) {
                   return true;
                 }
@@ -438,6 +459,7 @@
       "Settings change",
       "Stack replacements",
       "Stack inspection",
+      "Stack installs",
       "Other",
     ];
     let step = "category";
@@ -523,21 +545,40 @@
             const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
             for (const identifier of stackIdentifiers) {
               const group = value[`stack_group_inspection_${identifier}`] || {};
-              const stack_identifier =
-                group[`stack_identifier_${identifier}`] || "";
               const stack_serial_number =
                 group[`stack_serial_number_${identifier}`] || "";
               const insight = group[`insight_${identifier}`] || "";
 
-              if (stack_identifier || stack_serial_number || insight) {
+              if (stack_serial_number || insight) {
                 stackInspections.push(
-                  `('${identifier}','${stack_identifier}','${stack_serial_number}','${insight}')`
+                  `('${identifier}','${stack_serial_number}','${insight}')`
                 );
               }
             }
 
             if (stackInspections.length > 0) {
               noteData.stack_inspections = stackInspections.join(";") + ";";
+            }
+          }
+          if (category === "Stack installs") {
+            const stackInstalls: string[] = [];
+            const stackCount = getStackCount();
+            const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+            const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+            for (const identifier of stackIdentifiers) {
+              const group = value[`stack_group_installs_${identifier}`] || {};
+              const stack_serial_number =
+                group[`stack_serial_number_${identifier}`] || "";
+
+              if (stack_serial_number) {
+                stackInstalls.push(
+                  `('${identifier}','${stack_serial_number}')`
+                );
+              }
+            }
+
+            if (stackInstalls.length > 0) {
+              noteData.stack_installs = stackInstalls.join(";") + ";";
             }
           }
           // Transform tag_numbers from array of objects to array of strings
@@ -907,13 +948,12 @@
         .split(";")
         .filter((r) => r.trim())
         .map((r) => {
-          const match = r.match(/\('([^']+)','([^']*)','([^']*)','([^']*)'\)/);
+          const match = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
           if (match) {
             return {
               stack_identifier: match[1],
-              stack_identifier_value: match[2],
-              stack_serial_number: match[3],
-              insight: match[4],
+              stack_serial_number: match[2],
+              insight: match[3],
             };
           }
           return null;
@@ -924,11 +964,34 @@
         if (inspection) {
           const identifier = inspection.stack_identifier;
           initialValue[`stack_group_inspection_${identifier}`] = {
-            [`stack_identifier_${identifier}`]:
-              inspection.stack_identifier_value,
             [`stack_serial_number_${identifier}`]:
               inspection.stack_serial_number,
             [`insight_${identifier}`]: inspection.insight,
+          };
+        }
+      }
+    }
+    if (note.note_category === "Stack installs" && note.stack_installs) {
+      const installs = note.stack_installs
+        .split(";")
+        .filter((r) => r.trim())
+        .map((r) => {
+          const match = r.match(/\('([^']+)','([^']*)'\)/);
+          if (match) {
+            return {
+              stack_identifier: match[1],
+              stack_serial_number: match[2],
+            };
+          }
+          return null;
+        })
+        .filter((r) => r !== null);
+
+      for (const install of installs) {
+        if (install) {
+          const identifier = install.stack_identifier;
+          initialValue[`stack_group_installs_${identifier}`] = {
+            [`stack_serial_number_${identifier}`]: install.stack_serial_number,
           };
         }
       }
@@ -1000,15 +1063,13 @@
         for (const identifier of stackIdentifiers) {
           const group =
             result.value[`stack_group_inspection_${identifier}`] || {};
-          const stack_identifier =
-            group[`stack_identifier_${identifier}`] || "";
           const stack_serial_number =
             group[`stack_serial_number_${identifier}`] || "";
           const insight = group[`insight_${identifier}`] || "";
 
-          if (stack_identifier || stack_serial_number || insight) {
+          if (stack_serial_number || insight) {
             stackInspections.push(
-              `('${identifier}','${stack_identifier}','${stack_serial_number}','${insight}')`
+              `('${identifier}','${stack_serial_number}','${insight}')`
             );
           }
         }
@@ -1023,6 +1084,33 @@
 
         updatedNote.stack_inspections = stackInspections.join(";") + ";";
       }
+      if (note.note_category === "Stack installs") {
+        const stackInstalls: string[] = [];
+        const stackCount = getStackCount();
+        const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+        const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+
+        for (const identifier of stackIdentifiers) {
+          const group =
+            result.value[`stack_group_installs_${identifier}`] || {};
+          const stack_serial_number =
+            group[`stack_serial_number_${identifier}`] || "";
+
+          if (stack_serial_number) {
+            stackInstalls.push(`('${identifier}','${stack_serial_number}')`);
+          }
+        }
+
+        if (stackInstalls.length === 0) {
+          context.openAlertDialog({
+            title: "Validation Error",
+            message: "At least one stack install must be filled in.",
+          });
+          return;
+        }
+
+        updatedNote.stack_installs = stackInstalls.join(";") + ";";
+      }
       await notesService.edit(note._id, updatedNote);
     }
   }
@@ -1033,6 +1121,7 @@
       "Settings change",
       "Stack replacements",
       "Stack inspection",
+      "Stack installs",
       "Other",
     ];
 
@@ -1105,7 +1194,7 @@
           });
         }
 
-        // Show category-specific current fields based on note category
+        // Show category-specific current fields based on note category (READ-ONLY DISPLAY)
         switch (note.note_category) {
           case "Calibration":
           case "Settings change":
@@ -1169,6 +1258,18 @@
                 type: "String",
                 label: "Current Stack Inspections",
                 defaultValue: note.stack_inspections,
+                disabled: true,
+              });
+            }
+            break;
+
+          case "Stack installs":
+            if (note.stack_installs) {
+              allInputs.push({
+                key: "current_stack_installs",
+                type: "String",
+                label: "Current Stack Installs",
+                defaultValue: note.stack_installs,
                 disabled: true,
               });
             }
@@ -1246,9 +1347,10 @@
           updatedNote.software_type = null;
           updatedNote.stack_replacements = null;
           updatedNote.stack_inspections = null;
+          updatedNote.stack_installs = null;
           updatedNote.workorder_id = null;
 
-          // Handle new category-specific fields
+          // Handle new category-specific fields (SAVING LOGIC)
           switch (newCategory) {
             case "Calibration":
             case "Settings change":
@@ -1297,10 +1399,11 @@
                   title: "Validation Error",
                   message: "At least one stack replacement must be filled in.",
                 });
-                continue; // Stay in this step
+                continue;
               }
 
-              updatedNote.stack_replacements = stackReplacements.join(",");
+              updatedNote.stack_replacements =
+                stackReplacements.join(";") + ";";
               break;
 
             case "Stack inspection":
@@ -1315,15 +1418,13 @@
               for (const identifier of stackIdentifiers2) {
                 const group =
                   value[`stack_group_inspection_${identifier}`] || {};
-                const stack_identifier_value =
-                  group[`stack_identifier_${identifier}`] || "";
                 const stack_serial_number =
                   group[`stack_serial_number_${identifier}`] || "";
                 const insight = group[`insight_${identifier}`] || "";
 
-                if (stack_identifier_value || stack_serial_number || insight) {
+                if (stack_serial_number || insight) {
                   stackInspections.push(
-                    `('${identifier}','${stack_identifier_value}','${stack_serial_number}','${insight}')`
+                    `('${identifier}','${stack_serial_number}','${insight}')`
                   );
                 }
               }
@@ -1333,10 +1434,42 @@
                   title: "Validation Error",
                   message: "At least one stack inspection must be filled in.",
                 });
-                continue; // Stay in this step
+                continue;
               }
 
-              updatedNote.stack_inspections = stackInspections.join(",");
+              updatedNote.stack_inspections = stackInspections.join(";") + ";";
+              break;
+
+            case "Stack installs":
+              const stackInstalls: string[] = [];
+              const stackCount3 = getStackCount();
+              const allStackIdentifiers3 = ["a", "b", "c", "d", "e"];
+              const stackIdentifiers3 = allStackIdentifiers3.slice(
+                0,
+                stackCount3
+              );
+
+              for (const identifier of stackIdentifiers3) {
+                const group = value[`stack_group_installs_${identifier}`] || {};
+                const stack_serial_number =
+                  group[`stack_serial_number_${identifier}`] || "";
+
+                if (stack_serial_number) {
+                  stackInstalls.push(
+                    `('${identifier}','${stack_serial_number}')`
+                  );
+                }
+              }
+
+              if (stackInstalls.length === 0) {
+                await context.openAlertDialog({
+                  title: "Validation Error",
+                  message: "At least one stack install must be filled in.",
+                });
+                continue;
+              }
+
+              updatedNote.stack_installs = stackInstalls.join(";") + ";";
               break;
           }
 
@@ -1586,15 +1719,12 @@
             .split(";")
             .filter((r) => r.trim())
             .map((r) => {
-              const match = r.match(
-                /\('([^']+)','([^']*)','([^']*)','([^']*)'\)/
-              );
+              const match = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
               if (match) {
                 return {
                   identifier: match[1],
-                  stack_identifier: match[2],
-                  serial_number: match[3],
-                  insight: match[4],
+                  serial_number: match[2],
+                  insight: match[3],
                 };
               }
               return null;
@@ -1610,7 +1740,6 @@
               Stack ${inspection.identifier.toUpperCase()}
             </div>
             <div style="font-size: 11px; color: color-mix(in srgb, transparent, currentcolor 30%);">
-              <div>Stack Identifier: ${inspection.stack_identifier || "-"}</div>
               <div>Serial Number: ${inspection.serial_number || "-"}</div>
               <div>Insight: ${inspection.insight || "-"}</div>
             </div>
@@ -1623,6 +1752,47 @@
         categoryFields = `
     <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
       ${inspectionHtml}
+    </div>
+  `;
+        break;
+      case "Stack installs":
+        let installsHtml = "";
+        if (note.stack_installs) {
+          const installs = note.stack_installs
+            .split(";")
+            .filter((r) => r.trim())
+            .map((r) => {
+              const match = r.match(/\('([^']+)','([^']*)'\)/);
+              if (match) {
+                return {
+                  identifier: match[1],
+                  serial_number: match[2],
+                };
+              }
+              return null;
+            })
+            .filter((r) => r !== null);
+
+          if (installs.length > 0) {
+            installsHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Installs:</strong></div>`;
+            installs.forEach((install) => {
+              installsHtml += `
+          <div style="margin: 8px 0; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 4%); border-radius: 4px;">
+            <div style="font-weight: 500; margin-bottom: 4px;">
+              Stack ${install.identifier.toUpperCase()}
+            </div>
+            <div style="font-size: 11px; color: color-mix(in srgb, transparent, currentcolor 30%);">
+              <div>Serial Number: ${install.serial_number || "-"}</div>
+            </div>
+          </div>
+        `;
+            });
+          }
+        }
+
+        categoryFields = `
+    <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+      ${installsHtml}
     </div>
   `;
         break;
@@ -1816,6 +1986,33 @@
           });
         }
         break;
+      case "Stack installs":
+        // Dynamically determine number of stacks based on agent type
+        const stackCountInstalls = getStackCount();
+        const allStackIdentifiersInstalls = ["a", "b", "c", "d", "e"];
+        const stackIdentifiersInstalls = allStackIdentifiersInstalls.slice(
+          0,
+          stackCountInstalls
+        );
+
+        for (const identifier of stackIdentifiersInstalls) {
+          inputs.push({
+            key: `stack_group_installs_${identifier}`,
+            type: "Group" as const,
+            label: `Stack ${identifier.toUpperCase()}`,
+            required: false,
+            children: [
+              {
+                key: `stack_serial_number_${identifier}`,
+                type: "String",
+                label: "Stack Serial Number",
+                placeholder: "Enter serial number",
+                required: false,
+              },
+            ],
+          });
+        }
+        break;
       case "Stack inspection":
         // Dynamically determine number of stacks based on agent type
         const stackCountInspection = getStackCount();
@@ -1832,15 +2029,6 @@
             label: `Stack ${identifier.toUpperCase()}`,
             required: false,
             children: [
-              {
-                key: `stack_identifier_${identifier}`,
-                type: "String",
-                label: "Stack Identifier",
-                placeholder: "e.g., Stack A",
-                required: false,
-                defaultValue: `Stack ${identifier.toUpperCase()}`,
-                disabled: true,
-              },
               {
                 key: `stack_serial_number_${identifier}`,
                 type: "String",
