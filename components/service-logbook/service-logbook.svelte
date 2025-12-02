@@ -1241,37 +1241,170 @@
               });
             }
             if (note.stack_replacements) {
-              allInputs.push({
-                key: "current_stack_replacements",
-                type: "String",
-                label: "Current Stack Replacements",
-                defaultValue: note.stack_replacements,
-                disabled: true,
-              });
+              // Parse and display each stack replacement in a readable format
+              const replacements = note.stack_replacements
+                .split(";")
+                .filter((r) => r.trim())
+                .map((r) => {
+                  const match = r.match(
+                    /\('([^']+)','([^']*)','([^']*)','([^']*)','([^']+)'\)/
+                  );
+                  if (match) {
+                    return {
+                      identifier: match[1],
+                      removed: match[2],
+                      added: match[3],
+                      symptom: match[4],
+                      confirmed: match[5] === "true",
+                    };
+                  }
+                  return null;
+                })
+                .filter((r) => r !== null);
+
+              for (const replacement of replacements) {
+                if (replacement && (replacement.removed || replacement.added)) {
+                  const symptomLabel =
+                    {
+                      high_crossover: "High crossover",
+                      conductivity_issues: "Conductivity issues",
+                      external_leak: "External leak",
+                      internal_leak: "Internal leak",
+                      ground_fault: "Ground fault",
+                      tie_rod: "Tie Rod",
+                    }[replacement.symptom] ||
+                    replacement.symptom ||
+                    "None";
+
+                  allInputs.push({
+                    key: `current_stack_replacement_${replacement.identifier}`,
+                    type: "Group" as const,
+                    label: `Current Stack ${replacement.identifier.toUpperCase()}`,
+                    disabled: true,
+                    children: [
+                      {
+                        key: `current_removed_${replacement.identifier}`,
+                        type: "String",
+                        label: "Removed Serial",
+                        defaultValue: replacement.removed || "-",
+                        disabled: true,
+                      },
+                      {
+                        key: `current_added_${replacement.identifier}`,
+                        type: "String",
+                        label: "Added Serial",
+                        defaultValue: replacement.added || "-",
+                        disabled: true,
+                      },
+                      {
+                        key: `current_symptom_${replacement.identifier}`,
+                        type: "String",
+                        label: "Symptom",
+                        defaultValue: symptomLabel,
+                        disabled: true,
+                      },
+                      {
+                        key: `current_confirmed_${replacement.identifier}`,
+                        type: "String",
+                        label: "Confirmed",
+                        defaultValue: replacement.confirmed ? "Yes" : "No",
+                        disabled: true,
+                      },
+                    ],
+                  });
+                }
+              }
             }
             break;
 
           case "Stack inspection":
             if (note.stack_inspections) {
-              allInputs.push({
-                key: "current_stack_inspections",
-                type: "String",
-                label: "Current Stack Inspections",
-                defaultValue: note.stack_inspections,
-                disabled: true,
-              });
+              // Parse and display each stack inspection in a readable format
+              const inspections = note.stack_inspections
+                .split(";")
+                .filter((r) => r.trim())
+                .map((r) => {
+                  const match = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
+                  if (match) {
+                    return {
+                      identifier: match[1],
+                      serial_number: match[2],
+                      insight: match[3],
+                    };
+                  }
+                  return null;
+                })
+                .filter((r) => r !== null);
+
+              for (const inspection of inspections) {
+                if (
+                  inspection &&
+                  (inspection.serial_number || inspection.insight)
+                ) {
+                  allInputs.push({
+                    key: `current_stack_inspection_${inspection.identifier}`,
+                    type: "Group" as const,
+                    label: `Current Stack ${inspection.identifier.toUpperCase()}`,
+                    disabled: true,
+                    children: [
+                      {
+                        key: `current_serial_${inspection.identifier}`,
+                        type: "String",
+                        label: "Serial Number",
+                        defaultValue: inspection.serial_number || "-",
+                        disabled: true,
+                      },
+                      {
+                        key: `current_insight_${inspection.identifier}`,
+                        type: "String",
+                        label: "Insight",
+                        defaultValue: inspection.insight || "-",
+                        disabled: true,
+                      },
+                    ],
+                  });
+                }
+              }
             }
             break;
 
           case "Stack installs":
             if (note.stack_installs) {
-              allInputs.push({
-                key: "current_stack_installs",
-                type: "String",
-                label: "Current Stack Installs",
-                defaultValue: note.stack_installs,
-                disabled: true,
-              });
+              // Parse and display each stack install in a readable format
+              const installs = note.stack_installs
+                .split(";")
+                .filter((r) => r.trim())
+                .map((r) => {
+                  const match = r.match(/\('([^']+)','([^']*)'\)/);
+                  if (match) {
+                    return {
+                      identifier: match[1],
+                      serial_number: match[2],
+                    };
+                  }
+                  return null;
+                })
+                .filter((r) => r !== null);
+
+              for (const install of installs) {
+                if (install && install.serial_number) {
+                  allInputs.push({
+                    key: `current_stack_install_${install.identifier}`,
+                    type: "Group" as const,
+                    label: `Current Stack ${install.identifier.toUpperCase()}`,
+                    disabled: true,
+                    children: [
+                      {
+                        key: `current_serial_${install.identifier}`,
+                        type: "String",
+                        label: "Serial Number",
+                        defaultValue: install.serial_number || "-",
+                        disabled: true,
+                      },
+                    ],
+                  });
+                }
+              }
             }
             break;
         }
