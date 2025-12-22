@@ -29,7 +29,8 @@
   } from "./categories.utils";
 
   export let context: ComponentContext;
-
+  const isPlugPowerUser: Writable<boolean> = writable(false);
+  let userEmail: string | null = null;
   let rootEl: HTMLDivElement;
   let addButton: HTMLButtonElement;
   let agentOrAsset: ResourceData.Agent | ResourceData.Asset | null = null;
@@ -156,6 +157,28 @@
 
     return [];
   }
+  async function fetchCurrentUserEmail(): Promise<string | null> {
+    try {
+      const url = context.getApiUrl("MyUser", { fields: "emailAddress" });
+      const response = await fetch(url, {
+        headers: {
+          Authorization: "Bearer " + context.appData.accessToken.secretId,
+          "Api-Application": context.appData.apiAppId,
+          "Api-Company": context.appData.company.publicId,
+          "Api-Version": "2",
+        },
+        method: "GET",
+      });
+
+      const data = await response.json();
+      if (data && data.data && data.data.emailAddress) {
+        return data.data.emailAddress;
+      }
+    } catch (error) {
+      console.error("Failed to fetch user email:", error);
+    }
+    return null;
+  }
   onMount(() => {
     translations = context.translate(
       [
@@ -210,15 +233,22 @@
     );
 
     filteredNotesWithHtml = derived(
-      [filter, notesWithHtml],
-      ([$filter, $notesWithHtml]) => {
+      [filter, notesWithHtml, isPlugPowerUser],
+      ([$filter, $notesWithHtml, $isPlugPowerUser]) => {
         const { searchQuery, selectedCategoryId } = $filter;
-        let notes =
+
+        // First filter by external_note visibility for non-Plug Power users
+        let notes = $notesWithHtml;
+        if (!$isPlugPowerUser) {
+          notes = notes.filter((note) => note.external_note === true);
+        }
+
+        // Then filter by category if selected
+        notes =
           selectedCategoryId !== null
-            ? $notesWithHtml.filter(
-                (note) => note.category === selectedCategoryId
-              )
-            : $notesWithHtml;
+            ? notes.filter((note) => note.category === selectedCategoryId)
+            : notes;
+
         if (!searchQuery) {
           return notes;
         }
@@ -255,12 +285,10 @@
           // Search in stack replacements (parse the string format)
           if (note.stack_replacements) {
             const stackSearchText = note.stack_replacements.toLowerCase();
-            // Search directly in the formatted string
             if (stackSearchText.includes(query)) {
               return true;
             }
 
-            // Also parse and search in individual fields
             const replacements = note.stack_replacements
               .split(";")
               .filter((r) => r.trim());
@@ -309,7 +337,6 @@
               }
             }
           }
-          // Search in stack installs (parse the string format)
           // Search in stack installs (parse the string format)
           if (note.stack_installs) {
             const installsSearchText = note.stack_installs.toLowerCase();
@@ -375,12 +402,21 @@
         { selector: "MyUser", fields: ["publicId", "support"] },
         { selector: "UserList", fields: ["name", "publicId"] },
       ],
-      ([myUserResult, userListResult]) => {
+      async ([myUserResult, userListResult]) => {
         myUser = myUserResult.data;
         if (userListResult.data) {
           usersDict = userListResult.data.reduce(
             (dict, user) => ({ ...dict, [user.publicId]: user }),
             {}
+          );
+        }
+
+        // Fetch user email to determine Plug Power status
+        // Fetch user email to determine Plug Power status
+        userEmail = await fetchCurrentUserEmail();
+        if (userEmail) {
+          isPlugPowerUser.set(
+            userEmail.toLowerCase().includes("@plugpower.com")
           );
         }
       }
@@ -420,21 +456,24 @@
     _usersDict: Record<string, ResourceData.User> | null,
     note: Note
   ): string {
+    // Try to look up user name from the users dictionary
     if (_usersDict) {
-      /**
-       * If the note has an author_id, use the author_id to get the user name.
-       * If the note has an author_name, use the author_name.
-       * If the note has a user, use the user to get the user name.
-       * If none of the above, use the UNKNOWN_USER translation.
-       */
-      return (
+      const nameFromDict =
         (note.author_id ? _usersDict[note.author_id]?.name : null) ??
-        note.author_name ??
-        (note.user ? _usersDict[note.user]?.name : null) ??
-        translations.UNKNOWN_USER
-      );
+        (note.user ? _usersDict[note.user]?.name : null);
+
+      if (nameFromDict) {
+        return nameFromDict;
+      }
     }
-    return "";
+
+    // Fall back to author_name stored on the note itself
+    if (note.author_name) {
+      return note.author_name;
+    }
+
+    // Final fallback
+    return translations.UNKNOWN_USER || "Unknown User";
   }
 
   function getNoteEditedBy(
@@ -453,7 +492,8 @@
   }
 
   async function handleAddButtonClick(): Promise<void> {
-    const categories = [
+    // Filter categories based on user type
+    const allCategories = [
       "Calibration",
       "Software update",
       "Settings change",
@@ -462,6 +502,19 @@
       "Stack installs",
       "Other",
     ];
+
+    // Hide Stack replacements, Stack inspection, and Stack installs for non-Plug Power users
+    const hiddenCategoriesForExternal = [
+      "Stack replacements",
+      "Stack inspection",
+      "Stack installs",
+    ];
+    const categories = get(isPlugPowerUser)
+      ? allCategories
+      : allCategories.filter(
+          (cat) => !hiddenCategoriesForExternal.includes(cat)
+        );
+
     let step = "category";
     let category: string | null = null;
     let performed_on: string | null = null;
@@ -491,6 +544,7 @@
           step = "exit";
         }
       } else if (step === "note") {
+        // ... rest of your existing code stays the same
         if (!category) {
           step = "category";
           continue;
@@ -506,7 +560,11 @@
           const { value } = noteResult;
           const noteData: Partial<Note> = {
             note_category: category,
-            external_note: value.external_note ?? false,
+            // For non-Plug Power users, always set external_note to true
+            // For Plug Power users, use the form value or default to false
+            external_note: get(isPlugPowerUser)
+              ? (value.external_note ?? false)
+              : true,
           };
           // Removed the old 'Stack replacements' specific date handling block (lines 89-91 original)
 
@@ -1115,7 +1173,8 @@
     }
   }
   async function handleRecategorizeNoteButtonClick(note: Note): Promise<void> {
-    const categories = [
+    // Filter categories based on user type
+    const allCategories = [
       "Calibration",
       "Software update",
       "Settings change",
@@ -1124,6 +1183,18 @@
       "Stack installs",
       "Other",
     ];
+
+    // Hide Stack replacements, Stack inspection, and Stack installs for non-Plug Power users
+    const hiddenCategoriesForExternal = [
+      "Stack replacements",
+      "Stack inspection",
+      "Stack installs",
+    ];
+    const categories = get(isPlugPowerUser)
+      ? allCategories
+      : allCategories.filter(
+          (cat) => !hiddenCategoriesForExternal.includes(cat)
+        );
 
     let step = "select_category";
     let newCategory: string | null = null;
@@ -1453,7 +1524,10 @@
               ? DateTime.fromMillis(note.performed_on).toISODate()
               : null,
             text: note.text,
-            external_note: note.external_note ?? false,
+            // For non-Plug Power users, always set external_note to true
+            external_note: get(isPlugPowerUser)
+              ? (note.external_note ?? false)
+              : true,
           },
           submitButtonText: "Recategorize Note",
           cancelButtonText: "Previous",
@@ -1465,7 +1539,10 @@
           const updatedNote: Partial<Note> = {
             note_category: newCategory,
             text: value.text,
-            external_note: value.external_note ?? false,
+            // For non-Plug Power users, always set external_note to true
+            external_note: get(isPlugPowerUser)
+              ? (note.external_note ?? false)
+              : true,
           };
 
           // Handle performed_on
@@ -1932,13 +2009,14 @@
     }
 
     // External note badge
-    const externalNoteBadge = note.external_note
-      ? `<div style="margin-bottom: 16px;">
-         <span style="display: inline-block; padding: 4px 8px; background-color: #2196F3; color: white; border-radius: 4px; font-size: 11px; font-weight: 500;">
-           📋 EXTERNAL NOTE
-         </span>
-       </div>`
-      : "";
+    const externalNoteBadge =
+      note.external_note && get(isPlugPowerUser)
+        ? `<div style="margin-bottom: 16px;">
+     <span style="display: inline-block; padding: 4px 8px; background-color: #2196F3; color: white; border-radius: 4px; font-size: 11px; font-weight: 500;">
+       📋 EXTERNAL NOTE
+     </span>
+   </div>`
+        : "";
     return `
     <div class="card">
       <div class="card-header">
@@ -2228,28 +2306,32 @@
     }
 
     // Add common fields for ALL categories
-    inputs.push(
-      {
-        key: "text",
-        type: "RichText" as const,
-        label: "Description of event",
-        placeholder: "Description of event",
-        required: false,
-        translate: false,
-        description:
-          category === "Stack replacements"
-            ? "---\n**Required**"
-            : "**Required**",
-      },
-      {
+    // Add common fields for ALL categories
+    inputs.push({
+      key: "text",
+      type: "RichText" as const,
+      label: "Description of event",
+      placeholder: "Description of event",
+      required: false,
+      translate: false,
+      description:
+        category === "Stack replacements"
+          ? "---\n**Required**"
+          : "**Required**",
+    });
+
+    // Only show external_note checkbox for Plug Power users
+    // For external users, default to true (so their notes are always visible to them)
+    if (get(isPlugPowerUser)) {
+      inputs.push({
         key: "external_note",
         type: "Checkbox" as const,
         label: "External Note",
         defaultValue: false,
         description:
           "Mark this note as external if it can be viewed by parties outside the company (e.g., external partners or customers)",
-      }
-    );
+      });
+    }
 
     return inputs;
   }
