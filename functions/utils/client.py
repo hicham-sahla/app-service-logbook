@@ -96,6 +96,7 @@ class NotesClient:
             stack_replacements=add.stack_replacements,
             stack_inspections=add.stack_inspections,
             stack_installs=add.stack_installs,
+            stack_tensioning=add.stack_tensioning,
             workorder_id=add.workorder_id,
         )
 
@@ -161,6 +162,7 @@ class NotesClient:
             "stack_replacements",
             "stack_inspections",
             "stack_installs",
+            "stack_tensioning",
             "workorder_id",
         ]:
             if field in edit.model_fields_set:

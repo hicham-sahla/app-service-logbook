@@ -47,6 +47,8 @@ class Note(BaseModel):
 
     stack_installs: str | None = Field(default=None)
 
+    stack_tensioning: str | None = Field(default=None)
+
     @field_validator("id", mode="before")
     @classmethod
     def convert_string_id_to_objectid(cls, v):
@@ -101,6 +103,7 @@ class NoteEdit(BaseModel):
     # Stack inspection
     stack_inspections: str | None = Field(default=None)
     stack_installs: str | None = Field(default=None)
+    stack_tensioning: str | None = Field(default=None)
 
 
 class NoteAdd(BaseModel):
@@ -126,6 +129,7 @@ class NoteAdd(BaseModel):
     # Stack inspection
     stack_inspections: str | None = Field(default=None)
     stack_installs: str | None = Field(default=None)
+    stack_tensioning: str | None = Field(default=None)
 
 
 class NoteRemove(BaseModel):

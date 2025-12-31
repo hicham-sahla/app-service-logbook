@@ -49,6 +49,9 @@ export interface Note {
   // Stack Inspection
   stack_inspections?: string | null;
   stack_installs?: string | null;
+
+  // Stack Tensioning
+  stack_tensioning?: string | null;
 }
 
 export interface NoteWithHtml extends Note {

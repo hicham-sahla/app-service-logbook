@@ -96,7 +96,92 @@
     // Default to 5MW if pattern not recognized
     return 5;
   }
+  /**
+   * Get the latest stack serial numbers from Stack installs or Stack replacements
+   * Returns a map of identifier -> serial_number
+   */
+  /**
+   * Get the latest stack serial numbers from Stack installs or Stack replacements
+   * For each stack identifier, finds the most recent entry that has a serial number for that identifier
+   * Returns a map of identifier -> serial_number
+   */
+  function getLatestStackSerialNumbers(): Map<string, string> {
+    const serialNumbers = new Map<string, string>();
+    const allNotes = get(notes);
 
+    // Filter notes to only Stack installs and Stack replacements
+    const relevantNotes = allNotes.filter(
+      (n) =>
+        n.note_category === "Stack installs" ||
+        n.note_category === "Stack replacements"
+    );
+
+    if (relevantNotes.length === 0) {
+      return serialNumbers;
+    }
+
+    // Sort by performed_on or created_on (newest first)
+    relevantNotes.sort((a, b) => {
+      const dateA = a.performed_on || a.created_on;
+      const dateB = b.performed_on || b.created_on;
+      return dateB - dateA;
+    });
+
+    // Determine which stack identifiers we need to find
+    const stackCount = getStackCount();
+    const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+    const neededIdentifiers = new Set(allStackIdentifiers.slice(0, stackCount));
+
+    // Go through notes from newest to oldest, collecting serial numbers for each identifier
+    for (const note of relevantNotes) {
+      // Stop if we've found all identifiers
+      if (neededIdentifiers.size === 0) {
+        break;
+      }
+
+      if (note.note_category === "Stack installs" && note.stack_installs) {
+        // Parse stack_installs format: ('a','serial');('b','serial');
+        const installs = note.stack_installs.split(";").filter((r) => r.trim());
+        for (const install of installs) {
+          const match = install.match(/\('([^']+)','([^']*)'\)/);
+          if (match) {
+            const [, identifier, serial] = match;
+            // Only use this serial if we haven't found one for this identifier yet
+            // and the serial is not empty
+            if (neededIdentifiers.has(identifier) && serial) {
+              serialNumbers.set(identifier, serial);
+              neededIdentifiers.delete(identifier);
+            }
+          }
+        }
+      } else if (
+        note.note_category === "Stack replacements" &&
+        note.stack_replacements
+      ) {
+        // Parse stack_replacements format: ('a','removed','added','symptom','confirmed');
+        // We want the "added" serial number
+        const replacements = note.stack_replacements
+          .split(";")
+          .filter((r) => r.trim());
+        for (const replacement of replacements) {
+          const match = replacement.match(
+            /\('([^']+)','([^']*)','([^']*)','([^']*)','([^']+)'\)/
+          );
+          if (match) {
+            const [, identifier, , addedSerial] = match;
+            // Only use this serial if we haven't found one for this identifier yet
+            // and the added serial is not empty
+            if (neededIdentifiers.has(identifier) && addedSerial) {
+              serialNumbers.set(identifier, addedSerial);
+              neededIdentifiers.delete(identifier);
+            }
+          }
+        }
+      }
+    }
+
+    return serialNumbers;
+  }
   async function fetchDataVariables(
     agentId: string
   ): Promise<{ value: string; label: string; shortLabel: string }[]> {
@@ -310,6 +395,33 @@
               }
             }
           }
+          if (note.stack_tensioning) {
+            const tensioningSearchText = note.stack_tensioning.toLowerCase();
+            if (tensioningSearchText.includes(query)) {
+              return true;
+            }
+
+            const tensionings = note.stack_tensioning
+              .split(";")
+              .filter((r) => r.trim());
+
+            for (const tensioning of tensionings) {
+              const match = tensioning.match(
+                /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+              );
+              if (match) {
+                const [, identifier, serialNumber, insight, completed] = match;
+                if (
+                  identifier.toLowerCase().includes(query) ||
+                  serialNumber.toLowerCase().includes(query) ||
+                  insight.toLowerCase().includes(query) ||
+                  (completed === "true" && "completed".includes(query))
+                ) {
+                  return true;
+                }
+              }
+            }
+          }
           // Search in stack inspections (parse the string format)
           if (note.stack_inspections) {
             const inspectionSearchText = note.stack_inspections.toLowerCase();
@@ -493,26 +605,29 @@
 
   async function handleAddButtonClick(): Promise<void> {
     // Filter categories based on user type
-    const allCategories = [
-      "Calibration",
-      "Software update",
-      "Settings change",
-      "Stack replacements",
-      "Stack inspection",
-      "Stack installs",
-      "Other",
+    // Internal values stay the same, but we use labels for display
+    const allCategoryOptions = [
+      { value: "Calibration", label: "Calibration" },
+      { value: "Software update", label: "Software update" },
+      { value: "Settings change", label: "Settings change" },
+      { value: "Stack replacements", label: "Stack replacements" },
+      { value: "Stack inspection", label: "Stack visual inspection" },
+      { value: "Stack tensioning", label: "Stack tensioning" },
+      { value: "Stack installs", label: "Stack installs" },
+      { value: "Other", label: "Other" },
     ];
 
-    // Hide Stack replacements, Stack inspection, and Stack installs for non-Plug Power users
+    // Hide Stack replacements, Stack inspection, Stack tensioning, and Stack installs for non-Plug Power users
     const hiddenCategoriesForExternal = [
       "Stack replacements",
       "Stack inspection",
+      "Stack tensioning",
       "Stack installs",
     ];
-    const categories = get(isPlugPowerUser)
-      ? allCategories
-      : allCategories.filter(
-          (cat) => !hiddenCategoriesForExternal.includes(cat)
+    const categoryOptions = get(isPlugPowerUser)
+      ? allCategoryOptions
+      : allCategoryOptions.filter(
+          (cat) => !hiddenCategoriesForExternal.includes(cat.value)
         );
 
     let step = "category";
@@ -530,7 +645,7 @@
               type: "Selection",
               label: "Category",
               required: true,
-              options: categories.map((c) => ({ label: c, value: c })),
+              options: categoryOptions,
             },
           ],
           submitButtonText: "Next",
@@ -544,13 +659,18 @@
           step = "exit";
         }
       } else if (step === "note") {
-        // ... rest of your existing code stays the same
         if (!category) {
           step = "category";
           continue;
         }
+
+        // Get display label for the category
+        const categoryLabel =
+          allCategoryOptions.find((c) => c.value === category)?.label ||
+          category;
+
         const noteResult = await context.openFormDialog({
-          title: `${translations.ADD} ${category}`,
+          title: `${translations.ADD} ${categoryLabel}`,
           inputs: _getNoteInputs(category),
           submitButtonText: translations.ADD,
           cancelButtonText: "Previous",
@@ -566,7 +686,6 @@
               ? (value.external_note ?? false)
               : true,
           };
-          // Removed the old 'Stack replacements' specific date handling block (lines 89-91 original)
 
           if (category === "Stack replacements") {
             const stackReplacements: string[] = [];
@@ -606,16 +725,44 @@
               const stack_serial_number =
                 group[`stack_serial_number_${identifier}`] || "";
               const insight = group[`insight_${identifier}`] || "";
+              const stack_completed = group[`stack_completed_${identifier}`]
+                ? "true"
+                : "false";
 
               if (stack_serial_number || insight) {
                 stackInspections.push(
-                  `('${identifier}','${stack_serial_number}','${insight}')`
+                  `('${identifier}','${stack_serial_number}','${insight}','${stack_completed}')`
                 );
               }
             }
 
             if (stackInspections.length > 0) {
               noteData.stack_inspections = stackInspections.join(";") + ";";
+            }
+          }
+          if (category === "Stack tensioning") {
+            const stackTensioning: string[] = [];
+            const stackCount = getStackCount();
+            const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+            const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+            for (const identifier of stackIdentifiers) {
+              const group = value[`stack_group_tensioning_${identifier}`] || {};
+              const stack_serial_number =
+                group[`stack_serial_number_${identifier}`] || "";
+              const insight = group[`insight_${identifier}`] || "";
+              const stack_completed = group[`stack_completed_${identifier}`]
+                ? "true"
+                : "false";
+
+              if (stack_serial_number || insight) {
+                stackTensioning.push(
+                  `('${identifier}','${stack_serial_number}','${insight}','${stack_completed}')`
+                );
+              }
+            }
+
+            if (stackTensioning.length > 0) {
+              noteData.stack_tensioning = stackTensioning.join(";") + ";";
             }
           }
           if (category === "Stack installs") {
@@ -1006,12 +1153,26 @@
         .split(";")
         .filter((r) => r.trim())
         .map((r) => {
-          const match = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
-          if (match) {
+          // Try new format first (with completed flag)
+          const matchNew = r.match(
+            /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+          );
+          if (matchNew) {
             return {
-              stack_identifier: match[1],
-              stack_serial_number: match[2],
-              insight: match[3],
+              stack_identifier: matchNew[1],
+              stack_serial_number: matchNew[2],
+              insight: matchNew[3],
+              stack_completed: matchNew[4] === "true",
+            };
+          }
+          // Fall back to old format (without completed flag)
+          const matchOld = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
+          if (matchOld) {
+            return {
+              stack_identifier: matchOld[1],
+              stack_serial_number: matchOld[2],
+              insight: matchOld[3],
+              stack_completed: false,
             };
           }
           return null;
@@ -1025,6 +1186,37 @@
             [`stack_serial_number_${identifier}`]:
               inspection.stack_serial_number,
             [`insight_${identifier}`]: inspection.insight,
+            [`stack_completed_${identifier}`]: inspection.stack_completed,
+          };
+        }
+      }
+    }
+    if (note.note_category === "Stack tensioning" && note.stack_tensioning) {
+      const tensionings = note.stack_tensioning
+        .split(";")
+        .filter((r) => r.trim())
+        .map((r) => {
+          const match = r.match(/\('([^']+)','([^']*)','([^']*)','([^']+)'\)/);
+          if (match) {
+            return {
+              stack_identifier: match[1],
+              stack_serial_number: match[2],
+              insight: match[3],
+              stack_completed: match[4] === "true",
+            };
+          }
+          return null;
+        })
+        .filter((r) => r !== null);
+
+      for (const tensioning of tensionings) {
+        if (tensioning) {
+          const identifier = tensioning.stack_identifier;
+          initialValue[`stack_group_tensioning_${identifier}`] = {
+            [`stack_serial_number_${identifier}`]:
+              tensioning.stack_serial_number,
+            [`insight_${identifier}`]: tensioning.insight,
+            [`stack_completed_${identifier}`]: tensioning.stack_completed,
           };
         }
       }
@@ -1054,8 +1246,19 @@
         }
       }
     }
+
+    // Get display label for the category
+    const categoryLabelMap: Record<string, string> = {
+      "Stack inspection": "Stack visual inspection",
+      "Stack tensioning": "Stack tensioning",
+    };
+    const displayCategory =
+      categoryLabelMap[note.note_category || ""] ||
+      note.note_category ||
+      "Other";
+
     const result = await context.openFormDialog({
-      title: `${translations.EDIT} ${note.note_category}`,
+      title: `${translations.EDIT} ${displayCategory}`,
       inputs: _getNoteInputs(note.note_category || "Other", true),
       initialValue,
       submitButtonText: translations.CONFIRM,
@@ -1124,10 +1327,13 @@
           const stack_serial_number =
             group[`stack_serial_number_${identifier}`] || "";
           const insight = group[`insight_${identifier}`] || "";
+          const stack_completed = group[`stack_completed_${identifier}`]
+            ? "true"
+            : "false";
 
           if (stack_serial_number || insight) {
             stackInspections.push(
-              `('${identifier}','${stack_serial_number}','${insight}')`
+              `('${identifier}','${stack_serial_number}','${insight}','${stack_completed}')`
             );
           }
         }
@@ -1141,6 +1347,39 @@
         }
 
         updatedNote.stack_inspections = stackInspections.join(";") + ";";
+      }
+      if (note.note_category === "Stack tensioning") {
+        const stackTensioning: string[] = [];
+        const stackCount = getStackCount();
+        const allStackIdentifiers = ["a", "b", "c", "d", "e"];
+        const stackIdentifiers = allStackIdentifiers.slice(0, stackCount);
+
+        for (const identifier of stackIdentifiers) {
+          const group =
+            result.value[`stack_group_tensioning_${identifier}`] || {};
+          const stack_serial_number =
+            group[`stack_serial_number_${identifier}`] || "";
+          const insight = group[`insight_${identifier}`] || "";
+          const stack_completed = group[`stack_completed_${identifier}`]
+            ? "true"
+            : "false";
+
+          if (stack_serial_number || insight) {
+            stackTensioning.push(
+              `('${identifier}','${stack_serial_number}','${insight}','${stack_completed}')`
+            );
+          }
+        }
+
+        if (stackTensioning.length === 0) {
+          context.openAlertDialog({
+            title: "Validation Error",
+            message: "At least one stack tensioning must be filled in.",
+          });
+          return;
+        }
+
+        updatedNote.stack_tensioning = stackTensioning.join(";") + ";";
       }
       if (note.note_category === "Stack installs") {
         const stackInstalls: string[] = [];
@@ -1173,27 +1412,29 @@
     }
   }
   async function handleRecategorizeNoteButtonClick(note: Note): Promise<void> {
-    // Filter categories based on user type
-    const allCategories = [
-      "Calibration",
-      "Software update",
-      "Settings change",
-      "Stack replacements",
-      "Stack inspection",
-      "Stack installs",
-      "Other",
+    // Filter categories based on user type with labels
+    const allCategoryOptions = [
+      { value: "Calibration", label: "Calibration" },
+      { value: "Software update", label: "Software update" },
+      { value: "Settings change", label: "Settings change" },
+      { value: "Stack replacements", label: "Stack replacements" },
+      { value: "Stack inspection", label: "Stack visual inspection" },
+      { value: "Stack tensioning", label: "Stack tensioning" },
+      { value: "Stack installs", label: "Stack installs" },
+      { value: "Other", label: "Other" },
     ];
 
-    // Hide Stack replacements, Stack inspection, and Stack installs for non-Plug Power users
+    // Hide Stack replacements, Stack inspection, Stack tensioning, and Stack installs for non-Plug Power users
     const hiddenCategoriesForExternal = [
       "Stack replacements",
       "Stack inspection",
+      "Stack tensioning",
       "Stack installs",
     ];
-    const categories = get(isPlugPowerUser)
-      ? allCategories
-      : allCategories.filter(
-          (cat) => !hiddenCategoriesForExternal.includes(cat)
+    const categoryOptions = get(isPlugPowerUser)
+      ? allCategoryOptions
+      : allCategoryOptions.filter(
+          (cat) => !hiddenCategoriesForExternal.includes(cat.value)
         );
 
     let step = "select_category";
@@ -1210,7 +1451,7 @@
               type: "Selection",
               label: "New Category",
               required: true,
-              options: categories.map((c) => ({ label: c, value: c })),
+              options: categoryOptions,
               description:
                 "Choose the category you want to recategorize this note to",
             },
@@ -1245,11 +1486,18 @@
           disabled: true,
         });
 
+        // Get display label for current category
+        const currentCategoryLabel =
+          allCategoryOptions.find((c) => c.value === note.note_category)
+            ?.label ||
+          note.note_category ||
+          "Other";
+
         allInputs.push({
           key: "current_category_display",
           type: "String",
           label: "Current Category",
-          defaultValue: note.note_category || "Other",
+          defaultValue: currentCategoryLabel,
           disabled: true,
         });
 
@@ -1302,15 +1550,6 @@
             break;
 
           case "Stack replacements":
-            if (note.workorder_id) {
-              allInputs.push({
-                key: "current_workorder_id",
-                type: "String",
-                label: "Current Workorder ID",
-                defaultValue: note.workorder_id,
-                disabled: true,
-              });
-            }
             if (note.stack_replacements) {
               // Parse and display each stack replacement in a readable format
               const replacements = note.stack_replacements
@@ -1335,20 +1574,8 @@
 
               for (const replacement of replacements) {
                 if (replacement && (replacement.removed || replacement.added)) {
-                  const symptomLabel =
-                    {
-                      high_crossover: "High crossover",
-                      conductivity_issues: "Conductivity issues",
-                      external_leak: "External leak",
-                      internal_leak: "Internal leak",
-                      ground_fault: "Ground fault",
-                      tie_rod: "Tie Rod",
-                    }[replacement.symptom] ||
-                    replacement.symptom ||
-                    "None";
-
                   allInputs.push({
-                    key: `current_stack_replacement_${replacement.identifier}`,
+                    key: `current_stack_${replacement.identifier}`,
                     type: "Group" as const,
                     label: `Current Stack ${replacement.identifier.toUpperCase()}`,
                     disabled: true,
@@ -1368,16 +1595,9 @@
                         disabled: true,
                       },
                       {
-                        key: `current_symptom_${replacement.identifier}`,
-                        type: "String",
-                        label: "Symptom",
-                        defaultValue: symptomLabel,
-                        disabled: true,
-                      },
-                      {
                         key: `current_confirmed_${replacement.identifier}`,
                         type: "String",
-                        label: "Confirmed",
+                        label: "Symptom Confirmed",
                         defaultValue: replacement.confirmed ? "Yes" : "No",
                         disabled: true,
                       },
@@ -1395,12 +1615,26 @@
                 .split(";")
                 .filter((r) => r.trim())
                 .map((r) => {
-                  const match = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
-                  if (match) {
+                  // Try new format first
+                  const matchNew = r.match(
+                    /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+                  );
+                  if (matchNew) {
                     return {
-                      identifier: match[1],
-                      serial_number: match[2],
-                      insight: match[3],
+                      identifier: matchNew[1],
+                      serial_number: matchNew[2],
+                      insight: matchNew[3],
+                      completed: matchNew[4] === "true",
+                    };
+                  }
+                  // Fall back to old format
+                  const matchOld = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
+                  if (matchOld) {
+                    return {
+                      identifier: matchOld[1],
+                      serial_number: matchOld[2],
+                      insight: matchOld[3],
+                      completed: false,
                     };
                   }
                   return null;
@@ -1430,6 +1664,73 @@
                         type: "String",
                         label: "Insight",
                         defaultValue: inspection.insight || "-",
+                        disabled: true,
+                      },
+                      {
+                        key: `current_completed_${inspection.identifier}`,
+                        type: "String",
+                        label: "Inspection Completed",
+                        defaultValue: inspection.completed ? "Yes" : "No",
+                        disabled: true,
+                      },
+                    ],
+                  });
+                }
+              }
+            }
+            break;
+
+          case "Stack tensioning":
+            if (note.stack_tensioning) {
+              const tensionings = note.stack_tensioning
+                .split(";")
+                .filter((r) => r.trim())
+                .map((r) => {
+                  const match = r.match(
+                    /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+                  );
+                  if (match) {
+                    return {
+                      identifier: match[1],
+                      serial_number: match[2],
+                      insight: match[3],
+                      completed: match[4] === "true",
+                    };
+                  }
+                  return null;
+                })
+                .filter((r) => r !== null);
+
+              for (const tensioning of tensionings) {
+                if (
+                  tensioning &&
+                  (tensioning.serial_number || tensioning.insight)
+                ) {
+                  allInputs.push({
+                    key: `current_stack_tensioning_${tensioning.identifier}`,
+                    type: "Group" as const,
+                    label: `Current Stack ${tensioning.identifier.toUpperCase()}`,
+                    disabled: true,
+                    children: [
+                      {
+                        key: `current_serial_${tensioning.identifier}`,
+                        type: "String",
+                        label: "Serial Number",
+                        defaultValue: tensioning.serial_number || "-",
+                        disabled: true,
+                      },
+                      {
+                        key: `current_insight_${tensioning.identifier}`,
+                        type: "String",
+                        label: "Insight",
+                        defaultValue: tensioning.insight || "-",
+                        disabled: true,
+                      },
+                      {
+                        key: `current_completed_${tensioning.identifier}`,
+                        type: "String",
+                        label: "Tensioning Completed",
+                        defaultValue: tensioning.completed ? "Yes" : "No",
                         disabled: true,
                       },
                     ],
@@ -1503,10 +1804,13 @@
         }
 
         // === NEW CATEGORY FIELDS SECTION (EDITABLE) ===
+        const newCategoryLabel =
+          allCategoryOptions.find((c) => c.value === newCategory)?.label ||
+          newCategory;
         allInputs.push({
           key: "separator_new",
           type: "String",
-          label: `━━━━━ NEW ${newCategory.toUpperCase()} FIELDS ━━━━━`,
+          label: `━━━━━ NEW ${newCategoryLabel.toUpperCase()} FIELDS ━━━━━`,
           defaultValue: "",
           disabled: true,
         });
@@ -1516,7 +1820,7 @@
         allInputs.push(...newCategoryInputs);
 
         const newFieldsResult = await context.openFormDialog({
-          title: `Recategorize to ${newCategory}`,
+          title: `Recategorize to ${newCategoryLabel}`,
           inputs: allInputs,
           initialValue: {
             // Preserve common fields
@@ -1529,38 +1833,41 @@
               ? (note.external_note ?? false)
               : true,
           },
-          submitButtonText: "Recategorize Note",
-          cancelButtonText: "Previous",
+          submitButtonText: "Recategorize",
+          cancelButtonText: "Back to Category Selection",
           discardChangesPrompt: true,
         });
 
         if (newFieldsResult && newFieldsResult.value) {
           const { value } = newFieldsResult;
+
+          // Prepare updated note with new category
           const updatedNote: Partial<Note> = {
             note_category: newCategory,
-            text: value.text,
-            // For non-Plug Power users, always set external_note to true
+            text: value.text || note.text,
             external_note: get(isPlugPowerUser)
-              ? (note.external_note ?? false)
+              ? (value.external_note ?? false)
               : true,
+            // Clear old category-specific fields
+            tag_numbers: null,
+            software_type: null,
+            version: null,
+            stack_replacements: null,
+            stack_inspections: null,
+            stack_installs: null,
+            stack_tensioning: null,
+            workorder_id: null,
           };
 
           // Handle performed_on
           if (value.performed_on) {
             const date = DateTime.fromISO(value.performed_on);
-            updatedNote.performed_on = date.toMillis();
+            if (date.isValid) {
+              updatedNote.performed_on = date.toMillis();
+            }
           }
 
-          // Clear old category-specific fields
-          updatedNote.tag_numbers = null;
-          updatedNote.version = null;
-          updatedNote.software_type = null;
-          updatedNote.stack_replacements = null;
-          updatedNote.stack_inspections = null;
-          updatedNote.stack_installs = null;
-          updatedNote.workorder_id = null;
-
-          // Handle new category-specific fields (SAVING LOGIC)
+          // Handle new category-specific fields
           switch (newCategory) {
             case "Calibration":
             case "Settings change":
@@ -1631,10 +1938,13 @@
                 const stack_serial_number =
                   group[`stack_serial_number_${identifier}`] || "";
                 const insight = group[`insight_${identifier}`] || "";
+                const stack_completed = group[`stack_completed_${identifier}`]
+                  ? "true"
+                  : "false";
 
                 if (stack_serial_number || insight) {
                   stackInspections.push(
-                    `('${identifier}','${stack_serial_number}','${insight}')`
+                    `('${identifier}','${stack_serial_number}','${insight}','${stack_completed}')`
                   );
                 }
               }
@@ -1650,8 +1960,8 @@
               updatedNote.stack_inspections = stackInspections.join(";") + ";";
               break;
 
-            case "Stack installs":
-              const stackInstalls: string[] = [];
+            case "Stack tensioning":
+              const stackTensioning: string[] = [];
               const stackCount3 = getStackCount();
               const allStackIdentifiers3 = ["a", "b", "c", "d", "e"];
               const stackIdentifiers3 = allStackIdentifiers3.slice(
@@ -1660,6 +1970,43 @@
               );
 
               for (const identifier of stackIdentifiers3) {
+                const group =
+                  value[`stack_group_tensioning_${identifier}`] || {};
+                const stack_serial_number =
+                  group[`stack_serial_number_${identifier}`] || "";
+                const insight = group[`insight_${identifier}`] || "";
+                const stack_completed = group[`stack_completed_${identifier}`]
+                  ? "true"
+                  : "false";
+
+                if (stack_serial_number || insight) {
+                  stackTensioning.push(
+                    `('${identifier}','${stack_serial_number}','${insight}','${stack_completed}')`
+                  );
+                }
+              }
+
+              if (stackTensioning.length === 0) {
+                await context.openAlertDialog({
+                  title: "Validation Error",
+                  message: "At least one stack tensioning must be filled in.",
+                });
+                continue;
+              }
+
+              updatedNote.stack_tensioning = stackTensioning.join(";") + ";";
+              break;
+
+            case "Stack installs":
+              const stackInstalls: string[] = [];
+              const stackCount4 = getStackCount();
+              const allStackIdentifiers4 = ["a", "b", "c", "d", "e"];
+              const stackIdentifiers4 = allStackIdentifiers4.slice(
+                0,
+                stackCount4
+              );
+
+              for (const identifier of stackIdentifiers4) {
                 const group = value[`stack_group_installs_${identifier}`] || {};
                 const stack_serial_number =
                   group[`stack_serial_number_${identifier}`] || "";
@@ -1787,7 +2134,10 @@
       allowStyleAttr: true,
     });
     // Category section
-    const categoryName = note.note_category || "Uncategorized";
+    const categoryName =
+      note.note_category === "Stack inspection"
+        ? "Stack visual inspection"
+        : note.note_category || "Uncategorized";
     const categorySection = `
     <div style="margin-bottom: 16px; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 8%); border-radius: 4px;">
       <strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Category:</strong> 
@@ -1892,6 +2242,7 @@
                   external_leak: "External leak",
                   internal_leak: "Internal leak",
                   ground_fault: "Ground fault",
+                  leakage_current: "Leakage current",
                 }[stack.symptom] ||
                 stack.symptom ||
                 "-";
@@ -1922,6 +2273,7 @@
         </div>
       `;
         break;
+
       case "Stack inspection":
         let inspectionHtml = "";
         if (note.stack_inspections) {
@@ -1929,12 +2281,26 @@
             .split(";")
             .filter((r) => r.trim())
             .map((r) => {
-              const match = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
-              if (match) {
+              // Try new format first (with completed flag)
+              const matchNew = r.match(
+                /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+              );
+              if (matchNew) {
                 return {
-                  identifier: match[1],
-                  serial_number: match[2],
-                  insight: match[3],
+                  identifier: matchNew[1],
+                  serial_number: matchNew[2],
+                  insight: matchNew[3],
+                  completed: matchNew[4] === "true",
+                };
+              }
+              // Fall back to old format
+              const matchOld = r.match(/\('([^']+)','([^']*)','([^']*)'\)/);
+              if (matchOld) {
+                return {
+                  identifier: matchOld[1],
+                  serial_number: matchOld[2],
+                  insight: matchOld[3],
+                  completed: false,
                 };
               }
               return null;
@@ -1942,12 +2308,15 @@
             .filter((r) => r !== null);
 
           if (inspections.length > 0) {
-            inspectionHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Inspections:</strong></div>`;
+            inspectionHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Visual Inspections:</strong></div>`;
             inspections.forEach((inspection) => {
+              const completedBadge = inspection.completed
+                ? `<span style="display: inline-block; padding: 2px 6px; margin-left: 8px; background-color: #4caf50; color: white; border-radius: 3px; font-size: 10px; font-weight: 500;">✓ COMPLETED</span>`
+                : "";
               inspectionHtml += `
           <div style="margin: 8px 0; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 4%); border-radius: 4px;">
             <div style="font-weight: 500; margin-bottom: 4px;">
-              Stack ${inspection.identifier.toUpperCase()}
+              Stack ${inspection.identifier.toUpperCase()}${completedBadge}
             </div>
             <div style="font-size: 11px; color: color-mix(in srgb, transparent, currentcolor 30%);">
               <div>Serial Number: ${inspection.serial_number || "-"}</div>
@@ -1962,6 +2331,55 @@
         categoryFields = `
     <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
       ${inspectionHtml}
+    </div>
+  `;
+        break;
+      case "Stack tensioning":
+        let tensioningHtml = "";
+        if (note.stack_tensioning) {
+          const tensionings = note.stack_tensioning
+            .split(";")
+            .filter((r) => r.trim())
+            .map((r) => {
+              const match = r.match(
+                /\('([^']+)','([^']*)','([^']*)','([^']+)'\)/
+              );
+              if (match) {
+                return {
+                  identifier: match[1],
+                  serial_number: match[2],
+                  insight: match[3],
+                  completed: match[4] === "true",
+                };
+              }
+              return null;
+            })
+            .filter((r) => r !== null);
+
+          if (tensionings.length > 0) {
+            tensioningHtml += `<div style="margin-top: 12px;"><strong style="color: color-mix(in srgb, transparent, currentcolor 40%);">Stack Tensioning:</strong></div>`;
+            tensionings.forEach((tensioning) => {
+              const completedBadge = tensioning.completed
+                ? `<span style="display: inline-block; padding: 2px 6px; margin-left: 8px; background-color: #4caf50; color: white; border-radius: 3px; font-size: 10px; font-weight: 500;">✓ COMPLETED</span>`
+                : "";
+              tensioningHtml += `
+          <div style="margin: 8px 0; padding: 8px; background-color: color-mix(in srgb, transparent, currentcolor 4%); border-radius: 4px;">
+            <div style="font-weight: 500; margin-bottom: 4px;">
+              Stack ${tensioning.identifier.toUpperCase()}${completedBadge}
+            </div>
+            <div style="font-size: 11px; color: color-mix(in srgb, transparent, currentcolor 30%);">
+              <div>Serial Number: ${tensioning.serial_number || "-"}</div>
+              <div>Insight: ${tensioning.insight || "-"}</div>
+            </div>
+          </div>
+        `;
+            });
+          }
+        }
+
+        categoryFields = `
+    <div style="margin-bottom: 16px; padding: 8px; border-left: 3px solid color-mix(in srgb, transparent, currentcolor 20%);">
+      ${tensioningHtml}
     </div>
   `;
         break;
@@ -2173,6 +2591,7 @@
                 options: [
                   { label: "None", value: null },
                   { label: "High crossover", value: "high_crossover" },
+                  { label: "Leakage current", value: "leakage_current" },
                   {
                     label: "Conductivity issues",
                     value: "conductivity_issues",
@@ -2233,7 +2652,13 @@
           stackCountInspection
         );
 
+        // Get prefilled serial numbers if not editing
+        const prefillSerials = isEdit
+          ? new Map<string, string>()
+          : getLatestStackSerialNumbers();
+
         for (const identifier of stackIdentifiersInspection) {
+          const prefillSerial = prefillSerials.get(identifier) || "";
           inputs.push({
             key: `stack_group_inspection_${identifier}`,
             type: "Group" as const,
@@ -2246,6 +2671,7 @@
                 label: "Stack Serial Number",
                 placeholder: "Enter serial number",
                 required: false,
+                defaultValue: prefillSerial,
               },
               {
                 key: `insight_${identifier}`,
@@ -2253,6 +2679,59 @@
                 label: "Insight",
                 placeholder: "Enter insight",
                 required: false,
+              },
+              {
+                key: `stack_completed_${identifier}`,
+                type: "Checkbox" as const,
+                label: "Inspection Completed",
+                defaultValue: false,
+              },
+            ],
+          });
+        }
+        break;
+      case "Stack tensioning":
+        // Dynamically determine number of stacks based on agent type
+        const stackCountTensioning = getStackCount();
+        const allStackIdentifiersTensioning = ["a", "b", "c", "d", "e"];
+        const stackIdentifiersTensioning = allStackIdentifiersTensioning.slice(
+          0,
+          stackCountTensioning
+        );
+
+        // Get prefilled serial numbers if not editing
+        const prefillSerialsTensioning = isEdit
+          ? new Map<string, string>()
+          : getLatestStackSerialNumbers();
+
+        for (const identifier of stackIdentifiersTensioning) {
+          const prefillSerial = prefillSerialsTensioning.get(identifier) || "";
+          inputs.push({
+            key: `stack_group_tensioning_${identifier}`,
+            type: "Group" as const,
+            label: `Stack ${identifier.toUpperCase()}`,
+            required: false,
+            children: [
+              {
+                key: `stack_serial_number_${identifier}`,
+                type: "String",
+                label: "Stack Serial Number",
+                placeholder: "Enter serial number",
+                required: false,
+                defaultValue: prefillSerial,
+              },
+              {
+                key: `insight_${identifier}`,
+                type: "String",
+                label: "Insight",
+                placeholder: "Enter insight",
+                required: false,
+              },
+              {
+                key: `stack_completed_${identifier}`,
+                type: "Checkbox" as const,
+                label: "Tensioning Completed",
+                defaultValue: false,
               },
             ],
           });
@@ -2305,7 +2784,6 @@
         break;
     }
 
-    // Add common fields for ALL categories
     // Add common fields for ALL categories
     inputs.push({
       key: "text",
@@ -2390,6 +2868,10 @@
 
   function getNoteCategoryName(note: Note): string {
     if (note.note_category) {
+      // Map internal category names to display labels
+      if (note.note_category === "Stack inspection") {
+        return "Stack visual inspection";
+      }
       return note.note_category;
     }
     const category = getCategory(note.category);
@@ -2398,6 +2880,7 @@
     }
     return translations.UNCATEGORIZED || "Uncategorized";
   }
+
   async function handleDownloadJsonButtonClick(): Promise<void> {
     const result = await notesService.exportData();
     if (result.data.success) {
@@ -2996,8 +3479,8 @@
             padding: 4px 8px;
             margin-right: 8px;
             border-radius: 4px;
-            min-width: 100px;
-            width: 100px;
+            min-width: 150px;
+            width: 150px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
